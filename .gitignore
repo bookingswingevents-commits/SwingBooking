@@ -23,3 +23,6 @@ yarn-error.log*
 # tests / artifacts
 **/test-results/
 **/*.tsbuildinfo
+
+# Supabase local temp
+supabase/.temp/
