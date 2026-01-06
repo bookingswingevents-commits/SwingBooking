@@ -1,0 +1,15 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #003049;
+  --accent: #ae8616;
+}
+
+body { @apply bg-white text-slate-900; }
+.btn { @apply inline-flex items-center px-4 py-2 rounded-xl border border-slate-200 shadow-sm hover:shadow-md; }
+.btn-primary { background: var(--brand); color: white; }
+.btn-accent { background: var(--accent); color: white; }
+card { @apply rounded-2xl shadow p-6; }

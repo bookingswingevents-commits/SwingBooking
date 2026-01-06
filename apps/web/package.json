@@ -1,0 +1,37 @@
+{
+  "name": "swingbooking-web",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "tsc --noEmit",
+    "test:e2e": "bash -lc 'set -a; source .env.local; set +a; npx playwright test'",
+    "test:e2e:ui": "bash -lc 'set -a; source .env.local; set +a; npx playwright test --ui'"
+  },
+  "dependencies": {
+    "@fullcalendar/daygrid": "^6.1.19",
+    "@fullcalendar/interaction": "^6.1.19",
+    "@fullcalendar/react": "^6.1.19",
+    "@fullcalendar/timegrid": "^6.1.19",
+    "@playwright/test": "^1.57.0",
+    "@react-email/render": "^2.0.0",
+    "@supabase/ssr": "^0.4.0",
+    "@supabase/supabase-js": "2.45.4",
+    "clsx": "2.1.1",
+    "next": "^16.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "resend": "^6.2.1",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.9",
+    "@types/react": "18.3.5",
+    "autoprefixer": "10.4.20",
+    "eslint": "8.57.0",
+    "postcss": "8.4.47",
+    "tailwindcss": "3.4.10",
+    "typescript": "5.6.2"
+  }
+}
