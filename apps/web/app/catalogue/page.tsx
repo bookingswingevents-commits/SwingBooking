@@ -1,6 +1,7 @@
 // app/catalogue/page.tsx
 import Link from "next/link";
 import CatalogueCard from "@/components/CatalogueCard";
+import { headers } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +9,12 @@ export const dynamic = "force-dynamic";
  * Récupère la liste des formats depuis l’API interne /api/formats
  */
 async function getFormats() {
+  const hdrs = await headers();
+  const proto = hdrs.get("x-forwarded-proto") ?? "http";
+  const host = hdrs.get("x-forwarded-host") ?? hdrs.get("host") ?? "localhost:3000";
+  const base = `${proto}://${host}`;
   try {
-    const res = await fetch("/api/formats", { cache: "no-store" });
+    const res = await fetch(`${base}/api/formats`, { cache: "no-store" });
     if (!res.ok) {
       console.error("Erreur API /api/formats:", res.status, await res.text());
       return [];
