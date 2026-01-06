@@ -54,6 +54,7 @@ export default function ArtistMediaKitPage() {
         setError(null);
 
         const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user?.id) return;
         const token = session?.access_token ?? null;
         if (!token) {
           setError('Connectez-vous pour accéder au kit de communication.');

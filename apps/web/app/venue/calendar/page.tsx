@@ -92,7 +92,7 @@ export default function VenueCalendarPage() {
           .order('date', { ascending: true });
 
         if (occErr) throw new Error(occErr.message);
-        const occArray: OccurrenceRow[] = Array.isArray(data) ? data : [];
+        const occArray = (Array.isArray(data) ? data : []) as unknown as OccurrenceRow[];
         const list = occArray.filter(
           (o: any) => o.booking_requests && Object.keys(o.booking_requests).length > 0
         ) as OccurrenceRow[];

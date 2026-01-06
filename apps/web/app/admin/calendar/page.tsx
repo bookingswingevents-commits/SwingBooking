@@ -115,17 +115,18 @@ export default function AdminCalendarPage() {
     const base: CalendarEvent[] = [];
     (rows ?? []).forEach((o) => {
       const br = o.booking_requests;
-      if (!br) return;
+      const brRow = Array.isArray(br) ? br[0] ?? null : br;
+      if (!brRow) return;
       const startIso = `${o.date}T${o.start_time || '20:00'}`;
       base.push({
         id: o.id,
-        title: `${br.event_format || 'Événement'} — ${br.formation?.toUpperCase() || ''} — ${br.venue_company_name || ''}`,
+        title: `${brRow.event_format || 'Événement'} — ${brRow.formation?.toUpperCase() || ''} — ${brRow.venue_company_name || ''}`,
         start: startIso,
         end: addMinutes(startIso, o.duration_minutes),
-        url: `/admin/requests/${br.id}`,
-        status: br.status || undefined,
-        venueName: br.venue_company_name || br.venue_address || '',
-        formation: br.formation || undefined,
+        url: `/admin/requests/${brRow.id}`,
+        status: brRow.status || undefined,
+        venueName: brRow.venue_company_name || brRow.venue_address || '',
+        formation: brRow.formation || undefined,
       });
     });
     return base;

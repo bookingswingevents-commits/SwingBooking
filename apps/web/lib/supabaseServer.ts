@@ -65,5 +65,5 @@ export async function getAdminAuth(
     return { supabase, user, isAdmin: false, errorCode: 'NOT_ADMIN' as const };
   }
 
-  return { supabase, user, isAdmin: true, errorCode: null as const };
+  return { supabase, user, isAdmin: true, errorCode: null };
 }

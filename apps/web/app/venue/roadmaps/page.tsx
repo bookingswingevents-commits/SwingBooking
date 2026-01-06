@@ -82,7 +82,7 @@ export default function VenueRoadmapsPage() {
           .order('created_at', { ascending: false });
         if (error) throw new Error(error.message);
 
-        const list = (data ?? []) as Roadmap[];
+        const list = (data ?? []) as unknown as Roadmap[];
         const filtered = list.filter(
           (r: any) => r && r.request_id && r.booking_requests && Object.keys(r.booking_requests).length > 0
         );

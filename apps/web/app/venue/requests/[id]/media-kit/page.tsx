@@ -104,8 +104,8 @@ export default function VenueMediaKitPage() {
     () =>
       occurrences.length
         ? occurrences.map((o) => `${fmtDateFR(o.date)} ${o.start_time || ''}`.trim()).join(' • ')
-        : fmtDateFR(req?.event_date || '') || '',
-    [occurrences, req?.event_date]
+        : fmtDateFR((req as any)?.event_date || '') || '',
+    [occurrences, (req as any)?.event_date]
   );
 
   const hashtags = useMemo(() => {

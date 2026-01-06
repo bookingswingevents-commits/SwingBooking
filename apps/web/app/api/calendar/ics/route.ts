@@ -68,14 +68,15 @@ export async function GET(req: Request) {
     }
 
     if (!requestIds.length) {
-      const resp = NextResponse.json({ ok: true, empty: true });
-      resp.headers.set('Content-Type', 'text/calendar; charset=utf-8');
-      resp.headers.set('Content-Disposition', 'attachment; filename="swingbooking.ics"');
-      resp.headers.set('Cache-Control', 'no-cache');
-      resp.body = new Blob(['BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR'], {
-        type: 'text/calendar; charset=utf-8',
-      }) as any;
-      return resp;
+      const emptyIcs = 'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR';
+      return new NextResponse(emptyIcs, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/calendar; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="swingbooking.ics"',
+          'Cache-Control': 'no-cache',
+        },
+      });
     }
 
     // 2) Occurrences dans la plage

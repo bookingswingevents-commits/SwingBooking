@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { randomBytes } from 'crypto';
-import { emails } from '@/lib/emails/templates';
+import { emails as emailTemplates } from '@/lib/emails/templates';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
 
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const residency_id = body?.residency_id as string | undefined;
     const artist_ids = (body?.artist_ids as string[] | undefined) ?? [];
-    const emails = (body?.emails as string[] | undefined) ?? [];
+    const emailList = (body?.emails as string[] | undefined) ?? [];
     if (!residency_id || residency_id === 'undefined') {
       console.warn('[admin/residencies] MISSING_RESIDENCY_ID', { residency_id });
       return NextResponse.json({ ok: false, error: 'MISSING_RESIDENCY_ID' }, { status: 400 });
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       console.warn('[admin/residencies] INVALID_RESIDENCY_ID', { residency_id });
       return NextResponse.json({ ok: false, error: 'INVALID_RESIDENCY_ID' }, { status: 400 });
     }
-    if (artist_ids.length === 0 && emails.length === 0) {
+    if (artist_ids.length === 0 && emailList.length === 0) {
       console.warn('[admin/residencies] MISSING_ARTIST_IDS', { artist_ids });
       return NextResponse.json({ ok: false, error: 'MISSING_ARTISTS' }, { status: 400 });
     }
@@ -69,13 +69,13 @@ export async function POST(req: Request) {
     }
 
     let resolvedArtistIds = [...artist_ids];
-    if (emails.length) {
+    if (emailList.length) {
       const { data: emailProfiles } = await supaSrv
         .from('profiles')
         .select('id, email')
-        .in('email', emails);
+        .in('email', emailList);
       const resolved = (emailProfiles ?? []).map((p) => p.id);
-      const missing = emails.filter(
+      const missing = emailList.filter(
         (e) => !emailProfiles?.find((p) => (p.email ?? '').toLowerCase() === e.toLowerCase())
       );
       if (missing.length) {
@@ -169,7 +169,7 @@ export async function POST(req: Request) {
           from,
           to: email,
           subject: `Dispo residence: ${residency.name}`,
-          html: emails.residencyInvite(stageName, residency.name, link),
+          html: emailTemplates.residencyInvite(stageName, residency.name, link),
         });
         results.push({
           id: ins.id,

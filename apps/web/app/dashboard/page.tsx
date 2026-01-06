@@ -316,7 +316,7 @@ export default function DashboardPage() {
         if (resErr) {
           setLastError(resErr.message);
         }
-        setArtistResidencyUpcoming((resBookings ?? []) as ResidencyUpcoming[]);
+        setArtistResidencyUpcoming((resBookings ?? []) as unknown as ResidencyUpcoming[]);
 
         const { count } = await supabase
           .from('residency_weeks')
@@ -336,7 +336,7 @@ export default function DashboardPage() {
           .or(inviteFilters.join(','))
           .order('created_at', { ascending: false })
           .limit(10);
-        setArtistResidencyInvites((resInvites ?? []) as ResidencyInvitation[]);
+        setArtistResidencyInvites((resInvites ?? []) as unknown as ResidencyInvitation[]);
       }
 
       /* ====== ADMIN ====== */
@@ -524,6 +524,7 @@ export default function DashboardPage() {
                     const clientName = Array.isArray(res?.clients)
                       ? res?.clients[0]?.name
                       : (res as any)?.clients?.name ?? null;
+                    const resId = (res as any)?.id as string | undefined;
                     return (
                       <li key={b.id} className="text-sm flex items-center justify-between gap-2">
                         <div>
@@ -535,8 +536,8 @@ export default function DashboardPage() {
                             {clientName ? `• ${clientName}` : ''}
                           </div>
                         </div>
-                        {res?.id ? (
-                          <Link href={`/artist/programmations/${res.id}`} className="btn">
+                        {resId ? (
+                          <Link href={`/artist/programmations/${resId}`} className="btn">
                             Voir
                           </Link>
                         ) : null}

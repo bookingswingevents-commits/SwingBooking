@@ -2,13 +2,14 @@
 import Link from "next/link";
 import CatalogueCard from "@/components/CatalogueCard";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Récupère la liste des formats depuis l’API interne /api/formats
  */
 async function getFormats() {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   try {
-    const res = await fetch(`${base}/api/formats`, { cache: "no-store" });
+    const res = await fetch("/api/formats", { cache: "no-store" });
     if (!res.ok) {
       console.error("Erreur API /api/formats:", res.status, await res.text());
       return [];

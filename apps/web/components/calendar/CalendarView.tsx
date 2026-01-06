@@ -1,10 +1,7 @@
 'use client';
 
-import FullCalendar, {
-  DateSelectArg,
-  EventClickArg,
-  EventContentArg,
-} from '@fullcalendar/react';
+import FullCalendar from '@fullcalendar/react';
+import type { DateSelectArg, EventClickArg, EventContentArg } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
