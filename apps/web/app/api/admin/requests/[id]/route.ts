@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: NextRequest, context: any) {
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
@@ -12,7 +12,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: false, error: 'NOT_ADMIN' }, { status: 403 });
     }
 
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 

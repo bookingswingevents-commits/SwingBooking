@@ -11,7 +11,7 @@ function env(name: string) {
   return v;
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, context: any) {
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
@@ -26,6 +26,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    const params = await context.params;
+    const id = params?.id;
+
     const { data, error } = await supaSrv
       .from('artist_applications')
       .select(
@@ -34,7 +37,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
         artist_application_event_formats(event_format_id, event_formats(title))
       `
       )
-      .eq('id', params.id)
+      .eq('id', id)
       .maybeSingle();
 
     if (error || !data) {
@@ -47,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, context: any) {
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
@@ -62,7 +65,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const id = params.id;
+    const params = await context.params;
+    const id = params?.id;
     const body = await req.json();
     const status = body?.status as 'APPROVED' | 'REJECTED' | undefined;
     const admin_notes = body?.admin_notes ? String(body.admin_notes).trim() : null;

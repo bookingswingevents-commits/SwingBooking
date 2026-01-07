@@ -28,9 +28,10 @@ async function getTokenFromCookies(): Promise<string | null> {
   return null;
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, context: any) {
   try {
-    const { id } = await params;
+    const params = await context.params;
+    const id = params?.id;
     if (!id) {
       return NextResponse.json({ ok: false, error: 'Missing request id' }, { status: 400 });
     }
