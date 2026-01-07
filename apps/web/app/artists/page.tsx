@@ -126,12 +126,9 @@ export default function ArtistsCataloguePage() {
           directement, sans passer par le matching automatique.
         </p>
 
-        <Link
-          href="/subscribe"
-          className="px-4 py-2 inline-flex items-center rounded-xl bg-[var(--brand)] text-white font-medium hover:opacity-90"
-        >
-          Découvrir le Pack Premium
-        </Link>
+        <div className="px-4 py-2 inline-flex items-center rounded-xl border border-slate-200 text-slate-600 text-sm">
+          Contactez-nous pour activer l'acces Premium.
+        </div>
       </div>
     );
 

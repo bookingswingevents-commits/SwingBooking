@@ -49,11 +49,7 @@ export default function Navbar() {
     router.push('/login');
   };
 
-  const navLinks = [
-    { href: '/catalogue', label: 'Catalogue' },
-    { href: '/how-it-works', label: 'Comment ça marche ?' },
-    { href: '/subscribe', label: 'Packs & tarifs' },
-  ];
+  const navLinks = [{ href: '/catalogue', label: 'Catalogue' }];
 
   return (
     <header className="border-b bg-white/80 backdrop-blur">

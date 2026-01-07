@@ -973,9 +973,6 @@ function VenueHeaderStats({
         <Link href="/venue/roadmaps" className="btn">
           Feuilles de route
         </Link>
-        <Link href="/subscribe" className="btn">
-          Packs &amp; offres
-        </Link>
       </div>
     </div>
   );
@@ -1764,12 +1761,7 @@ function VenueProfilePreview() {
               <div className="font-semibold">{planLabel}</div>
             </div>
             {planCfg.id !== 'premium' && (
-              <Link
-                href="/subscribe"
-                className="text-xs underline text-[var(--brand)]"
-              >
-                Voir les packs
-              </Link>
+              <span className="text-xs text-slate-500">Contactez-nous</span>
             )}
           </div>
 
