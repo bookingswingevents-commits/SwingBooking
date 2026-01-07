@@ -18,6 +18,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const formation = searchParams.get('formation');
+    const formatId = searchParams.get('format_id');
 
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
@@ -39,8 +40,12 @@ export async function GET(req: Request) {
 
     const { data, error } = await supabaseSrv
       .from('artists')
-      .select('id, stage_name, formations, is_active')
-      .eq('is_active', true);
+      .select(
+        `
+        id, stage_name, formations, instagram_url, is_active,
+        artist_event_formats(event_format_id, event_formats(title))
+      `
+      );
     if (error) {
       return NextResponse.json(
         { ok: false, error: error.message },
@@ -66,7 +71,7 @@ export async function GET(req: Request) {
       }
     }
 
-    const filtered = (data ?? []).filter((a: any) => {
+    let filtered = (data ?? []).filter((a: any) => {
       if (!formation) return true;
       const f = formation.toLowerCase().trim();
       const forms = Array.isArray(a.formations)
@@ -74,7 +79,17 @@ export async function GET(req: Request) {
         : [];
       if (forms.length === 0) return true; // fallback : pas de formation déclarée => affiché
       return forms.includes(f);
-    }).map(a => ({
+    });
+
+    if (formatId) {
+      const idNum = Number(formatId);
+      filtered = filtered.filter((a: any) => {
+        const links = Array.isArray(a.artist_event_formats) ? a.artist_event_formats : [];
+        return links.some((l: any) => Number(l.event_format_id) === idNum);
+      });
+    }
+
+    filtered = filtered.map(a => ({
       ...a,
       full_name: profileNames[a.id] ?? null,
       email: profileEmails[a.id] ?? null,

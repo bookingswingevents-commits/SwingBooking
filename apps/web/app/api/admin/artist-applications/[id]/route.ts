@@ -12,6 +12,10 @@ function env(name: string) {
 }
 
 export async function GET(_req: Request, context: any) {
+  return NextResponse.json(
+    { ok: false, error: 'DEPRECATED_ARTIST_APPLICATIONS' },
+    { status: 410 }
+  );
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
@@ -51,6 +55,10 @@ export async function GET(_req: Request, context: any) {
 }
 
 export async function PATCH(req: Request, context: any) {
+  return NextResponse.json(
+    { ok: false, error: 'DEPRECATED_ARTIST_APPLICATIONS' },
+    { status: 410 }
+  );
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);

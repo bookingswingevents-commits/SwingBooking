@@ -11,6 +11,10 @@ function env(name: string) {
 }
 
 export async function POST(req: Request) {
+  return NextResponse.json(
+    { ok: false, error: 'DEPRECATED_ARTIST_APPLICATIONS' },
+    { status: 410 }
+  );
   try {
     const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL');
     const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');

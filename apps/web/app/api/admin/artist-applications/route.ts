@@ -12,6 +12,10 @@ function env(name: string) {
 }
 
 export async function GET(req: Request) {
+  return NextResponse.json(
+    { ok: false, error: 'DEPRECATED_ARTIST_APPLICATIONS' },
+    { status: 410 }
+  );
   try {
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
