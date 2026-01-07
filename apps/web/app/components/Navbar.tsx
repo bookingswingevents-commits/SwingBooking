@@ -11,6 +11,7 @@ export default function Navbar() {
 
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<any>(null);
+  const [role, setRole] = useState<'admin' | 'artist' | 'venue' | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -21,6 +22,18 @@ export default function Navbar() {
       } = await supabase.auth.getSession();
       if (!mounted) return;
       setSession(session ?? null);
+      if (session?.user?.id) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (mounted) {
+          setRole((profile?.role as 'admin' | 'artist' | 'venue' | null) ?? null);
+        }
+      } else if (mounted) {
+        setRole(null);
+      }
 
       const {
         data: { subscription },
@@ -98,6 +111,14 @@ export default function Navbar() {
             <span className="text-xs text-slate-400">…</span>
           ) : isLogged ? (
             <>
+              {role === 'admin' ? (
+                <Link
+                  href="/admin/artists"
+                  className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"
+                >
+                  Catalogue artistes
+                </Link>
+              ) : null}
               <Link
                 href="/dashboard"
                 className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"
