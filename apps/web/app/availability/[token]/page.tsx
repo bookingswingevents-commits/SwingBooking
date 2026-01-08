@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { use, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { fmtDateFR } from '@/lib/date';
 
@@ -39,8 +39,8 @@ type WeekApplication = {
 const formatMoney = (cents: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100);
 
-export default function AvailabilityPage({ params }: { params: { token: string } }) {
-  const token = params.token;
+export default function AvailabilityPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = use(params);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [residency, setResidency] = useState<ResidencyRow | null>(null);
