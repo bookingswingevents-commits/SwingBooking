@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useEffect, useMemo, useState } from 'react';
 import React from 'react';
 import Link from 'next/link';
@@ -94,6 +96,7 @@ export default function AdminResidencyDetailPage({
   const [searchArtist, setSearchArtist] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [origin, setOrigin] = useState<string>('');
   const [editName, setEditName] = useState('');
@@ -112,6 +115,7 @@ export default function AdminResidencyDetailPage({
     try {
       setLoading(true);
       setError(null);
+      setSuccess(null);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
@@ -193,6 +197,12 @@ export default function AdminResidencyDetailPage({
 
   useEffect(() => {
     if (!residencyId) return;
+    setResidency(null);
+    setWeeks([]);
+    setOccurrences([]);
+    setInvitations([]);
+    setError(null);
+    setLoading(true);
     loadData();
     loadArtists();
   }, [residencyId]);
@@ -294,6 +304,32 @@ export default function AdminResidencyDetailPage({
         })
         .eq('id', residency.id);
       if (upErr) throw upErr;
+      await loadData();
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la mise a jour');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function saveConditions() {
+    if (!residency) return;
+    try {
+      setActionLoading(true);
+      setError(null);
+      const res = await fetch(`/api/admin/residencies/${residency.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lodging_included: editLodging,
+          meals_included: editMeals,
+          companion_included: editCompanion,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
+      setSuccess('Conditions mises a jour.');
       await loadData();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la mise a jour');
@@ -409,11 +445,21 @@ export default function AdminResidencyDetailPage({
           {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
           {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
         </div>
+        {success ? (
+          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+            {success}
+          </div>
+        ) : null}
         <div className="text-sm text-slate-600">
           Semaine calme: 2 prestations • 1 cachet (150€ net)
         </div>
         <div className="text-sm text-slate-600">
           Semaine forte: 4 prestations • 2 cachets (300€ net)
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
+            Enregistrer les conditions
+          </button>
         </div>
       </section>
 

@@ -119,6 +119,14 @@ export default function Navbar() {
                   Catalogue artistes
                 </Link>
               ) : null}
+              {role === 'admin' ? (
+                <Link
+                  href="/admin/clients"
+                  className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"
+                >
+                  Clients
+                </Link>
+              ) : null}
               <Link
                 href="/dashboard"
                 className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"
