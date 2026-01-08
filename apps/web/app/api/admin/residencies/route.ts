@@ -67,21 +67,33 @@ export async function POST(req: Request) {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    const normalizedDates = mode === 'DATES'
-      ? Array.from(new Set(dates.map((d) => String(d).trim()).filter(Boolean))).sort()
-      : [];
+    let normalizedDates: string[] = [];
+    let computedStart: string;
+    let computedEnd: string;
+    let weeks: ReturnType<typeof generateResidencyWeeks> = [];
 
-    const computedStart = mode === 'DATES' ? normalizedDates[0] : start_date;
-    const computedEnd =
-      mode === 'DATES' ? normalizedDates[normalizedDates.length - 1] : end_date;
-
-    if (mode === 'DATES' && (!computedStart || !computedEnd)) {
-      return NextResponse.json({ ok: false, error: 'INVALID_DATES' }, { status: 400 });
-    }
-
-    const weeks = mode === 'RANGE' ? generateResidencyWeeks(start_date, end_date) : [];
-    if (mode === 'RANGE' && weeks.length === 0) {
-      return NextResponse.json({ ok: false, error: 'Periode invalide' }, { status: 400 });
+    if (mode === 'RANGE') {
+      if (!start_date || start_date === 'undefined') {
+        console.warn('[admin/residencies] MISSING_START_DATE', { start_date });
+        return NextResponse.json({ ok: false, error: 'MISSING_START_DATE' }, { status: 400 });
+      }
+      if (!end_date || end_date === 'undefined') {
+        console.warn('[admin/residencies] MISSING_END_DATE', { end_date });
+        return NextResponse.json({ ok: false, error: 'MISSING_END_DATE' }, { status: 400 });
+      }
+      weeks = generateResidencyWeeks(start_date, end_date);
+      if (weeks.length === 0) {
+        return NextResponse.json({ ok: false, error: 'Periode invalide' }, { status: 400 });
+      }
+      computedStart = start_date;
+      computedEnd = end_date;
+    } else {
+      normalizedDates = Array.from(new Set(dates.map((d) => String(d).trim()).filter(Boolean))).sort();
+      computedStart = normalizedDates[0];
+      computedEnd = normalizedDates[normalizedDates.length - 1];
+      if (!computedStart || !computedEnd) {
+        return NextResponse.json({ ok: false, error: 'INVALID_DATES' }, { status: 400 });
+      }
     }
 
     const { data: residency, error: insErr } = await supaSrv
