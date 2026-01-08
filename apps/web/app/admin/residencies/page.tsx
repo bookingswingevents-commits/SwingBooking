@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
+import { DayPicker } from 'react-day-picker';
 
 type ClientRow = { id: string; name: string };
 
@@ -32,7 +33,7 @@ export default function AdminResidenciesPage() {
   const [mode, setMode] = useState<'RANGE' | 'DATES'>('RANGE');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [datesInput, setDatesInput] = useState('');
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [lodgingIncluded, setLodgingIncluded] = useState(true);
   const [mealsIncluded, setMealsIncluded] = useState(true);
   const [companionIncluded, setCompanionIncluded] = useState(true);
@@ -91,12 +92,13 @@ export default function AdminResidenciesPage() {
     ));
   }, [clients]);
 
-  function normalizeDates(raw: string) {
-    const cleaned = raw
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    return Array.from(new Set(cleaned)).sort();
+  function formatDateISO(date: Date) {
+    const normalized = new Date(date);
+    normalized.setHours(12, 0, 0, 0);
+    const year = normalized.getFullYear();
+    const month = `${normalized.getMonth() + 1}`.padStart(2, '0');
+    const day = `${normalized.getDate()}`.padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   async function createResidency(e: React.FormEvent) {
@@ -105,7 +107,7 @@ export default function AdminResidenciesPage() {
       setError('Merci de renseigner tous les champs.');
       return;
     }
-    const datesList = mode === 'DATES' ? normalizeDates(datesInput) : [];
+    const datesList = mode === 'DATES' ? selectedDates.map(formatDateISO).sort() : [];
     if (mode === 'RANGE' && (!startDate || !endDate)) {
       setError('Merci de renseigner les dates.');
       return;
@@ -138,7 +140,7 @@ export default function AdminResidenciesPage() {
       setName('');
       setStartDate('');
       setEndDate('');
-      setDatesInput('');
+      setSelectedDates([]);
       await loadAll();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la creation');
@@ -259,12 +261,18 @@ export default function AdminResidenciesPage() {
               />
             </>
           ) : (
-            <textarea
-              className="border rounded-lg px-3 py-2 md:col-span-2 min-h-[120px]"
-              placeholder="Dates (1 par ligne, YYYY-MM-DD)"
-              value={datesInput}
-              onChange={(e) => setDatesInput(e.target.value)}
-            />
+            <div className="md:col-span-2 space-y-2">
+              <div className="rounded-lg border p-3 bg-white">
+                <DayPicker
+                  mode="multiple"
+                  selected={selectedDates}
+                  onSelect={(dates) => setSelectedDates(dates ?? [])}
+                />
+              </div>
+              <div className="text-sm text-slate-600">
+                {selectedDates.length} date{selectedDates.length > 1 ? 's' : ''} selectionnee{selectedDates.length > 1 ? 's' : ''}.
+              </div>
+            </div>
           )}
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
@@ -293,7 +301,10 @@ export default function AdminResidenciesPage() {
             Accompagnant inclus
           </label>
         </div>
-        <button className="btn btn-primary" disabled={creating}>
+        <button
+          className="btn btn-primary"
+          disabled={creating || (mode === 'DATES' && selectedDates.length === 0)}
+        >
           {creating ? 'Creation…' : 'Creer la programmation'}
         </button>
       </form>
@@ -346,7 +357,9 @@ export default function AdminResidenciesPage() {
             : (r.residency_occurrences as any)?.count;
           const modeLabel =
             r.mode === 'DATES'
-              ? `• ${occCount ?? 0} dates (du ${fmtDateFR(r.start_date)} au ${fmtDateFR(r.end_date)})`
+              ? occCount == null
+                ? '• Dates multiples'
+                : `• ${occCount} dates (du ${fmtDateFR(r.start_date)} au ${fmtDateFR(r.end_date)})`
               : `• ${fmtDateFR(r.start_date)} → ${fmtDateFR(r.end_date)}`;
           return (
             <div key={r.id} className="rounded-xl border p-4 flex items-center justify-between gap-4">
