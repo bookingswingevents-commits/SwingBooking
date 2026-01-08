@@ -32,6 +32,8 @@ export async function POST(req: Request) {
     const name = body?.name as string | undefined;
     const start_date = body?.start_date as string | undefined;
     const end_date = body?.end_date as string | undefined;
+    const mode = (body?.mode as string | undefined) || (Array.isArray(body?.dates) ? 'DATES' : 'RANGE');
+    const dates = Array.isArray(body?.dates) ? (body.dates as string[]) : [];
     if (!client_id || client_id === 'undefined') {
       console.warn('[admin/residencies] MISSING_CLIENT_ID', { client_id });
       return NextResponse.json({ ok: false, error: 'MISSING_CLIENT_ID' }, { status: 400 });
@@ -44,35 +46,56 @@ export async function POST(req: Request) {
       console.warn('[admin/residencies] MISSING_NAME', { name });
       return NextResponse.json({ ok: false, error: 'MISSING_NAME' }, { status: 400 });
     }
-    if (!start_date || start_date === 'undefined') {
-      console.warn('[admin/residencies] MISSING_START_DATE', { start_date });
-      return NextResponse.json({ ok: false, error: 'MISSING_START_DATE' }, { status: 400 });
-    }
-    if (!end_date || end_date === 'undefined') {
-      console.warn('[admin/residencies] MISSING_END_DATE', { end_date });
-      return NextResponse.json({ ok: false, error: 'MISSING_END_DATE' }, { status: 400 });
-    }
-
-    const weeks = generateResidencyWeeks(start_date, end_date);
-    if (weeks.length === 0) {
-      return NextResponse.json({ ok: false, error: 'Periode invalide' }, { status: 400 });
+    if (mode === 'RANGE') {
+      if (!start_date || start_date === 'undefined') {
+        console.warn('[admin/residencies] MISSING_START_DATE', { start_date });
+        return NextResponse.json({ ok: false, error: 'MISSING_START_DATE' }, { status: 400 });
+      }
+      if (!end_date || end_date === 'undefined') {
+        console.warn('[admin/residencies] MISSING_END_DATE', { end_date });
+        return NextResponse.json({ ok: false, error: 'MISSING_END_DATE' }, { status: 400 });
+      }
+    } else if (mode === 'DATES') {
+      if (!dates.length) {
+        return NextResponse.json({ ok: false, error: 'MISSING_DATES' }, { status: 400 });
+      }
+    } else {
+      return NextResponse.json({ ok: false, error: 'INVALID_MODE' }, { status: 400 });
     }
 
     const supaSrv = createClient(supabaseUrl, serviceKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    const normalizedDates = mode === 'DATES'
+      ? Array.from(new Set(dates.map((d) => String(d).trim()).filter(Boolean))).sort()
+      : [];
+
+    const computedStart = mode === 'DATES' ? normalizedDates[0] : start_date;
+    const computedEnd =
+      mode === 'DATES' ? normalizedDates[normalizedDates.length - 1] : end_date;
+
+    if (mode === 'DATES' && (!computedStart || !computedEnd)) {
+      return NextResponse.json({ ok: false, error: 'INVALID_DATES' }, { status: 400 });
+    }
+
+    const weeks = mode === 'RANGE' ? generateResidencyWeeks(start_date, end_date) : [];
+    if (mode === 'RANGE' && weeks.length === 0) {
+      return NextResponse.json({ ok: false, error: 'Periode invalide' }, { status: 400 });
+    }
+
     const { data: residency, error: insErr } = await supaSrv
       .from('residencies')
       .insert({
         client_id,
         name,
-        start_date,
-        end_date,
+        start_date: computedStart,
+        end_date: computedEnd,
         lodging_included: body?.lodging_included ?? true,
         meals_included: body?.meals_included ?? true,
         companion_included: body?.companion_included ?? true,
         created_by: user.id,
+        mode,
       })
       .select('id')
       .maybeSingle();
@@ -81,17 +104,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: insErr?.message ?? 'Insert failed' }, { status: 500 });
     }
 
-    const weekRows = weeks.map((w) => ({
-      ...w,
-      residency_id: residency.id,
-    }));
+    if (mode === 'RANGE') {
+      const weekRows = weeks.map((w) => ({
+        ...w,
+        residency_id: residency.id,
+      }));
 
-    const { error: weeksErr } = await supaSrv.from('residency_weeks').insert(weekRows);
-    if (weeksErr) {
-      return NextResponse.json({ ok: false, error: weeksErr.message }, { status: 500 });
+      const { error: weeksErr } = await supaSrv.from('residency_weeks').insert(weekRows);
+      if (weeksErr) {
+        return NextResponse.json({ ok: false, error: weeksErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ ok: true, id: residency.id, mode, weeks: weekRows.length });
     }
 
-    return NextResponse.json({ ok: true, id: residency.id, weeks: weekRows.length });
+    const occurrenceRows = normalizedDates.map((date) => ({
+      residency_id: residency.id,
+      date,
+    }));
+
+    const { error: occErr } = await supaSrv
+      .from('residency_occurrences')
+      .insert(occurrenceRows);
+    if (occErr) {
+      return NextResponse.json({ ok: false, error: occErr.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, id: residency.id, mode, occurrences: occurrenceRows.length });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? 'Server error' }, { status: 500 });
   }

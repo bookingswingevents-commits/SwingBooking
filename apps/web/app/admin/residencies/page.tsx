@@ -14,7 +14,9 @@ type ResidencyRow = {
   start_date: string;
   end_date: string;
   client_id: string;
+  mode?: 'RANGE' | 'DATES' | null;
   clients?: { name: string } | { name: string }[] | null;
+  residency_occurrences?: { count: number }[] | { count: number } | null;
 };
 
 export default function AdminResidenciesPage() {
@@ -27,8 +29,10 @@ export default function AdminResidenciesPage() {
 
   const [clientId, setClientId] = useState('');
   const [name, setName] = useState('');
+  const [mode, setMode] = useState<'RANGE' | 'DATES'>('RANGE');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [datesInput, setDatesInput] = useState('');
   const [lodgingIncluded, setLodgingIncluded] = useState(true);
   const [mealsIncluded, setMealsIncluded] = useState(true);
   const [companionIncluded, setCompanionIncluded] = useState(true);
@@ -57,7 +61,7 @@ export default function AdminResidenciesPage() {
         supabase.from('clients').select('id, name').order('name', { ascending: true }),
         supabase
           .from('residencies')
-          .select('id, name, start_date, end_date, client_id, clients(name)')
+          .select('id, name, start_date, end_date, client_id, mode, clients(name), residency_occurrences(count)')
           .order('start_date', { ascending: false }),
       ]);
 
@@ -84,10 +88,27 @@ export default function AdminResidenciesPage() {
     ));
   }, [clients]);
 
+  function normalizeDates(raw: string) {
+    const cleaned = raw
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return Array.from(new Set(cleaned)).sort();
+  }
+
   async function createResidency(e: React.FormEvent) {
     e.preventDefault();
-    if (!clientId || !name || !startDate || !endDate) {
+    if (!clientId || !name) {
       setError('Merci de renseigner tous les champs.');
+      return;
+    }
+    const datesList = mode === 'DATES' ? normalizeDates(datesInput) : [];
+    if (mode === 'RANGE' && (!startDate || !endDate)) {
+      setError('Merci de renseigner les dates.');
+      return;
+    }
+    if (mode === 'DATES' && datesList.length === 0) {
+      setError('Merci de renseigner au moins une date.');
       return;
     }
     try {
@@ -100,8 +121,10 @@ export default function AdminResidenciesPage() {
         body: JSON.stringify({
           client_id: clientId,
           name,
-          start_date: startDate,
-          end_date: endDate,
+          mode,
+          start_date: mode === 'RANGE' ? startDate : undefined,
+          end_date: mode === 'RANGE' ? endDate : undefined,
+          dates: mode === 'DATES' ? datesList : undefined,
           lodging_included: lodgingIncluded,
           meals_included: mealsIncluded,
           companion_included: companionIncluded,
@@ -112,6 +135,7 @@ export default function AdminResidenciesPage() {
       setName('');
       setStartDate('');
       setEndDate('');
+      setDatesInput('');
       await loadAll();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la creation');
@@ -161,24 +185,43 @@ export default function AdminResidenciesPage() {
             <option value="">Choisir un client</option>
             {clientOptions}
           </select>
+          <select
+            className="border rounded-lg px-3 py-2"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as 'RANGE' | 'DATES')}
+          >
+            <option value="RANGE">Residence (periode)</option>
+            <option value="DATES">Dates multiples</option>
+          </select>
           <input
             className="border rounded-lg px-3 py-2"
             placeholder="Nom de la programmation"
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <input
-            className="border rounded-lg px-3 py-2"
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2"
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-          />
+          {mode === 'RANGE' ? (
+            <>
+              <input
+                className="border rounded-lg px-3 py-2"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-3 py-2"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </>
+          ) : (
+            <textarea
+              className="border rounded-lg px-3 py-2 md:col-span-2 min-h-[120px]"
+              placeholder="Dates (1 par ligne, YYYY-MM-DD)"
+              value={datesInput}
+              onChange={(e) => setDatesInput(e.target.value)}
+            />
+          )}
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <label className="flex items-center gap-2">
@@ -219,12 +262,19 @@ export default function AdminResidenciesPage() {
           const clientName = Array.isArray(r.clients)
             ? r.clients[0]?.name
             : (r.clients as any)?.name;
+          const occCount = Array.isArray(r.residency_occurrences)
+            ? r.residency_occurrences[0]?.count
+            : (r.residency_occurrences as any)?.count;
+          const modeLabel =
+            r.mode === 'DATES'
+              ? `• ${occCount ?? 0} dates (du ${fmtDateFR(r.start_date)} au ${fmtDateFR(r.end_date)})`
+              : `• ${fmtDateFR(r.start_date)} → ${fmtDateFR(r.end_date)}`;
           return (
             <div key={r.id} className="rounded-xl border p-4 flex items-center justify-between gap-4">
               <div>
                 <div className="font-semibold">{r.name}</div>
                 <div className="text-sm text-slate-500">
-                  {clientName || 'Client'} • {fmtDateFR(r.start_date)} → {fmtDateFR(r.end_date)}
+                  {clientName || 'Client'} {modeLabel}
                 </div>
               </div>
               <Link href={`/admin/programmations/${r.id}`} className="btn btn-primary">

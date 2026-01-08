@@ -12,6 +12,7 @@ type ResidencyRow = {
   name: string;
   start_date: string;
   end_date: string;
+  mode?: 'RANGE' | 'DATES' | null;
   is_public: boolean;
   is_open: boolean;
   lodging_included: boolean;
@@ -48,6 +49,14 @@ type ResidencyWeek = {
   week_bookings?: WeekBooking[] | WeekBooking | null;
 };
 
+type ResidencyOccurrence = {
+  id: string;
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  notes: string | null;
+};
+
 type InvitationRow = {
   id: string;
   token: string;
@@ -78,6 +87,7 @@ export default function AdminResidencyDetailPage({
   const router = useRouter();
   const [residency, setResidency] = useState<ResidencyRow | null>(null);
   const [weeks, setWeeks] = useState<ResidencyWeek[]>([]);
+  const [occurrences, setOccurrences] = useState<ResidencyOccurrence[]>([]);
   const [invitations, setInvitations] = useState<InvitationRow[]>([]);
   const [artists, setArtists] = useState<ArtistOption[]>([]);
   const [selectedArtists, setSelectedArtists] = useState<Record<string, boolean>>({});
@@ -118,31 +128,43 @@ export default function AdminResidencyDetailPage({
         return;
       }
 
-      const [resRes, weeksRes, invRes] = await Promise.all([
-        supabase
-          .from('residencies')
-          .select('id, name, start_date, end_date, is_public, is_open, lodging_included, meals_included, companion_included, clients(name)')
-          .eq('id', residencyId)
-          .maybeSingle(),
-        supabase
+      const resRes = await supabase
+        .from('residencies')
+        .select('id, name, start_date, end_date, mode, is_public, is_open, lodging_included, meals_included, companion_included, clients(name)')
+        .eq('id', residencyId)
+        .maybeSingle();
+      if (resRes.error) throw resRes.error;
+      const resRow = resRes.data as ResidencyRow;
+
+      const invRes = await supabase
+        .from('residency_invitations')
+        .select('id, token, status, sent_at, created_at, target_filter')
+        .eq('residency_id', residencyId)
+        .order('created_at', { ascending: false });
+      if (invRes.error) throw invRes.error;
+
+      if (resRow?.mode === 'DATES') {
+        const occRes = await supabase
+          .from('residency_occurrences')
+          .select('id, date, start_time, end_time, notes')
+          .eq('residency_id', residencyId)
+          .order('date', { ascending: true });
+        if (occRes.error) throw occRes.error;
+        setOccurrences((occRes.data as ResidencyOccurrence[]) ?? []);
+        setWeeks([]);
+      } else {
+        const weeksRes = await supabase
           .from('residency_weeks')
           .select(
             'id, start_date_sun, end_date_sun, type, performances_count, fee_cents, status, confirmed_booking_id, week_applications(id, artist_id, status, created_at, artists(stage_name)), week_bookings(id, artist_id, status, artists(stage_name))'
           )
           .eq('residency_id', residencyId)
-          .order('start_date_sun', { ascending: true }),
-        supabase
-          .from('residency_invitations')
-          .select('id, token, status, sent_at, created_at, target_filter')
-          .eq('residency_id', residencyId)
-          .order('created_at', { ascending: false }),
-      ]);
+          .order('start_date_sun', { ascending: true });
+        if (weeksRes.error) throw weeksRes.error;
+        setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
+        setOccurrences([]);
+      }
 
-      if (resRes.error) throw resRes.error;
-      if (weeksRes.error) throw weeksRes.error;
-      if (invRes.error) throw invRes.error;
-
-      const resRow = resRes.data as ResidencyRow;
       setResidency(resRow);
       setEditName(resRow.name);
       setEditLodging(!!resRow.lodging_included);
@@ -150,7 +172,6 @@ export default function AdminResidencyDetailPage({
       setEditCompanion(!!resRow.companion_included);
       setEditIsPublic(!!resRow.is_public);
       setEditIsOpen(!!resRow.is_open);
-      setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
       setInvitations((invRes.data as InvitationRow[]) ?? []);
     } catch (e: any) {
       setError(e?.message ?? 'Erreur de chargement');
@@ -318,6 +339,25 @@ export default function AdminResidencyDetailPage({
     }
   }
 
+  async function deleteOccurrence(occurrenceId: string) {
+    try {
+      setActionLoading(true);
+      const res = await fetch('/api/admin/residency-occurrences', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: occurrenceId }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Suppression impossible');
+      await loadData();
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la suppression');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
   if (loading) return <div className="text-slate-500">Chargement…</div>;
   if (error) {
     return (
@@ -345,6 +385,7 @@ export default function AdminResidencyDetailPage({
   const clientName = Array.isArray(residency.clients)
     ? residency.clients[0]?.name
     : (residency.clients as any)?.name;
+  const occurrenceCount = occurrences.length;
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -354,7 +395,10 @@ export default function AdminResidencyDetailPage({
         </Link>
         <h1 className="text-2xl font-bold">{residency.name}</h1>
         <div className="text-sm text-slate-500">
-          {clientName || 'Client'} • {fmtDateFR(residency.start_date)} → {fmtDateFR(residency.end_date)}
+          {clientName || 'Client'} •{' '}
+          {residency.mode === 'DATES'
+            ? `${occurrenceCount} dates (du ${fmtDateFR(residency.start_date)} au ${fmtDateFR(residency.end_date)})`
+            : `${fmtDateFR(residency.start_date)} → ${fmtDateFR(residency.end_date)}`}
         </div>
       </header>
 
@@ -434,162 +478,196 @@ export default function AdminResidencyDetailPage({
         </div>
       </section>
 
-      <section className="rounded-xl border p-4 space-y-4">
-        <h2 className="font-semibold">Inviter des artistes</h2>
-        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-          <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Rechercher un artiste"
-            value={searchArtist}
-            onChange={(e) => setSearchArtist(e.target.value)}
-          />
-          <button className="btn btn-primary" onClick={sendInvitations} disabled={actionLoading}>
-            Envoyer les demandes
-          </button>
-        </div>
-        <div className="grid gap-2 md:grid-cols-2">
-          {filteredArtists.map((a) => (
-            <label key={a.id} className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={!!selectedArtists[a.id]}
-                onChange={(e) =>
-                  setSelectedArtists((prev) => ({ ...prev, [a.id]: e.target.checked }))
-                }
-              />
-              <span>
-                {a.stage_name || a.full_name || 'Artiste'} {a.email ? `• ${a.email}` : ''}
-              </span>
-            </label>
-          ))}
-        </div>
-        {invitations.length > 0 ? (
-          <div className="text-sm text-slate-500">
-            {invitations.length} invitation{invitations.length > 1 ? 's' : ''} envoyee{invitations.length > 1 ? 's' : ''}.
+      {residency.mode !== 'DATES' ? (
+        <section className="rounded-xl border p-4 space-y-4">
+          <h2 className="font-semibold">Inviter des artistes</h2>
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              className="border rounded-lg px-3 py-2"
+              placeholder="Rechercher un artiste"
+              value={searchArtist}
+              onChange={(e) => setSearchArtist(e.target.value)}
+            />
+            <button className="btn btn-primary" onClick={sendInvitations} disabled={actionLoading}>
+              Envoyer les demandes
+            </button>
           </div>
-        ) : null}
-      </section>
+          <div className="grid gap-2 md:grid-cols-2">
+            {filteredArtists.map((a) => (
+              <label key={a.id} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!selectedArtists[a.id]}
+                  onChange={(e) =>
+                    setSelectedArtists((prev) => ({ ...prev, [a.id]: e.target.checked }))
+                  }
+                />
+                <span>
+                  {a.stage_name || a.full_name || 'Artiste'} {a.email ? `• ${a.email}` : ''}
+                </span>
+              </label>
+            ))}
+          </div>
+          {invitations.length > 0 ? (
+            <div className="text-sm text-slate-500">
+              {invitations.length} invitation{invitations.length > 1 ? 's' : ''} envoyee{invitations.length > 1 ? 's' : ''}.
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-      <section className="rounded-xl border p-4 space-y-3">
-        <h2 className="font-semibold">Invitations</h2>
-        {invitations.length === 0 ? (
-          <div className="text-sm text-slate-500">Aucune invitation pour le moment.</div>
-        ) : (
-          invitations.map((inv) => {
-            const tf = inv.target_filter || {};
-            const name = tf.artist_name || tf.artist_email || 'Artiste';
-            const link = origin ? `${origin}/availability/${inv.token}` : `/availability/${inv.token}`;
-            return (
-              <div key={inv.id} className="flex flex-col gap-2 border rounded-lg p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="font-medium">{name}</div>
-                  <div className="text-xs text-slate-500">{inv.status}</div>
+      {residency.mode !== 'DATES' ? (
+        <section className="rounded-xl border p-4 space-y-3">
+          <h2 className="font-semibold">Invitations</h2>
+          {invitations.length === 0 ? (
+            <div className="text-sm text-slate-500">Aucune invitation pour le moment.</div>
+          ) : (
+            invitations.map((inv) => {
+              const tf = inv.target_filter || {};
+              const name = tf.artist_name || tf.artist_email || 'Artiste';
+              const link = origin ? `${origin}/availability/${inv.token}` : `/availability/${inv.token}`;
+              return (
+                <div key={inv.id} className="flex flex-col gap-2 border rounded-lg p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-medium">{name}</div>
+                    <div className="text-xs text-slate-500">{inv.status}</div>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {inv.sent_at ? `Envoyee: ${fmtDateFR(inv.sent_at)}` : 'Envoyee: —'}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <code className="text-xs bg-slate-50 border rounded px-2 py-1">{link}</code>
+                    <button
+                      className="btn"
+                      onClick={() => navigator.clipboard.writeText(link)}
+                    >
+                      Copier le lien
+                    </button>
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500">
-                  {inv.sent_at ? `Envoyee: ${fmtDateFR(inv.sent_at)}` : 'Envoyee: —'}
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <code className="text-xs bg-slate-50 border rounded px-2 py-1">{link}</code>
+              );
+            })
+          )}
+        </section>
+      ) : null}
+
+      {residency.mode === 'DATES' ? (
+        <section className="space-y-4">
+          <h2 className="font-semibold">Dates</h2>
+          {occurrences.length === 0 ? (
+            <div className="text-sm text-slate-500">Aucune date enregistree.</div>
+          ) : (
+            <div className="rounded-xl border divide-y">
+              {occurrences.map((occ) => (
+                <div key={occ.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
+                  <div>
+                    <div className="font-medium">{fmtDateFR(occ.date)}</div>
+                    <div className="text-xs text-slate-500">
+                      {occ.start_time || '—'} → {occ.end_time || '—'}
+                      {occ.notes ? ` • ${occ.notes}` : ''}
+                    </div>
+                  </div>
                   <button
                     className="btn"
-                    onClick={() => navigator.clipboard.writeText(link)}
+                    onClick={() => deleteOccurrence(occ.id)}
+                    disabled={actionLoading}
                   >
-                    Copier le lien
+                    Supprimer
                   </button>
                 </div>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : (
+        <section className="space-y-4">
+          <h2 className="font-semibold">Semaines</h2>
+          {weeks.map((w) => {
+            const applications = toArray(w.week_applications) as WeekApplication[];
+            const bookings = toArray(w.week_bookings) as WeekBooking[];
+            const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
+            const pendingCount = applications.filter((a) => a.status === 'APPLIED').length;
+            const statusLabel =
+              w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'OPEN';
+            return (
+              <div key={w.id} className="rounded-xl border p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">
+                      {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
+                    </div>
+                    <div className="text-sm text-slate-500">
+                      {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
+                      {w.performances_count} prestations • {formatMoney(w.fee_cents)} net
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs uppercase tracking-wide text-slate-500">{statusLabel}</span>
+                    <select
+                      className="border rounded-lg px-2 py-1 text-sm"
+                      value={w.type}
+                      disabled={w.status === 'CONFIRMED' || actionLoading}
+                      onChange={(e) => updateWeekType(w, e.target.value as 'CALM' | 'BUSY')}
+                    >
+                      <option value="CALM">CALME</option>
+                      <option value="BUSY">FORTE</option>
+                    </select>
+                  </div>
+                </div>
+
+                {confirmedBooking ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                    Confirme avec{' '}
+                    {Array.isArray(confirmedBooking.artists)
+                      ? confirmedBooking.artists[0]?.stage_name
+                      : confirmedBooking.artists?.stage_name || 'Artiste'}
+                    .
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium">Candidats</div>
+                  {applications.length === 0 ? (
+                    <div className="text-sm text-slate-500">Aucune candidature.</div>
+                  ) : (
+                    applications.map((a) => {
+                      const artistName = Array.isArray(a.artists)
+                        ? a.artists[0]?.stage_name
+                        : a.artists?.stage_name;
+                      return (
+                        <div key={a.id} className="flex items-center justify-between text-sm">
+                          <span>
+                            {artistName || 'Artiste'} • {a.status}
+                          </span>
+                          {w.status === 'OPEN' && a.status === 'APPLIED' ? (
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => confirmWeek(w.id, a.artist_id)}
+                              disabled={actionLoading}
+                            >
+                              Confirmer
+                            </button>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {w.status === 'CONFIRMED' ? (
+                  <button
+                    className="btn"
+                    onClick={() => cancelConfirmation(w.id)}
+                    disabled={actionLoading}
+                  >
+                    Annuler la confirmation
+                  </button>
+                ) : null}
               </div>
             );
-          })
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <h2 className="font-semibold">Semaines</h2>
-        {weeks.map((w) => {
-          const applications = toArray(w.week_applications) as WeekApplication[];
-          const bookings = toArray(w.week_bookings) as WeekBooking[];
-          const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
-          const pendingCount = applications.filter((a) => a.status === 'APPLIED').length;
-          const statusLabel =
-            w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'OPEN';
-          return (
-            <div key={w.id} className="rounded-xl border p-4 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">
-                    {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
-                  </div>
-                  <div className="text-sm text-slate-500">
-                    {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
-                    {w.performances_count} prestations • {formatMoney(w.fee_cents)} net
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs uppercase tracking-wide text-slate-500">{statusLabel}</span>
-                  <select
-                    className="border rounded-lg px-2 py-1 text-sm"
-                    value={w.type}
-                    disabled={w.status === 'CONFIRMED' || actionLoading}
-                    onChange={(e) => updateWeekType(w, e.target.value as 'CALM' | 'BUSY')}
-                  >
-                    <option value="CALM">CALME</option>
-                    <option value="BUSY">FORTE</option>
-                  </select>
-                </div>
-              </div>
-
-              {confirmedBooking ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
-                  Confirme avec{' '}
-                  {Array.isArray(confirmedBooking.artists)
-                    ? confirmedBooking.artists[0]?.stage_name
-                    : confirmedBooking.artists?.stage_name || 'Artiste'}
-                  .
-                </div>
-              ) : null}
-
-              <div className="space-y-2">
-                <div className="text-sm font-medium">Candidats</div>
-                {applications.length === 0 ? (
-                  <div className="text-sm text-slate-500">Aucune candidature.</div>
-                ) : (
-                  applications.map((a) => {
-                    const artistName = Array.isArray(a.artists)
-                      ? a.artists[0]?.stage_name
-                      : a.artists?.stage_name;
-                    return (
-                      <div key={a.id} className="flex items-center justify-between text-sm">
-                        <span>
-                          {artistName || 'Artiste'} • {a.status}
-                        </span>
-                        {w.status === 'OPEN' && a.status === 'APPLIED' ? (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => confirmWeek(w.id, a.artist_id)}
-                            disabled={actionLoading}
-                          >
-                            Confirmer
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {w.status === 'CONFIRMED' ? (
-                <button
-                  className="btn"
-                  onClick={() => cancelConfirmation(w.id)}
-                  disabled={actionLoading}
-                >
-                  Annuler la confirmation
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
-      </section>
+          })}
+        </section>
+      )}
     </div>
   );
 }
