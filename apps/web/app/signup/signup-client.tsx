@@ -113,15 +113,28 @@ export default function SignupClientPage() {
         }
       }
 
-      setMsg(
-        `🎉 Compte créé pour ${
-          role === 'artist' ? "l’artiste" : "l’établissement"
-        } !\nTu peux maintenant te connecter avec ${email}.`
-      );
+      setMsg('Redirection…');
       setDone(true);
 
-      // Redirection douce possible
-      // setTimeout(() => router.push('/login'), 3000);
+      let nextRole: Role = role;
+      const { data: sessionRes } = await supabase.auth.getSession();
+      const session = sessionRes?.session ?? null;
+      if (session?.user?.id) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (prof?.role === 'artist' || prof?.role === 'venue') {
+          nextRole = prof.role;
+        }
+      }
+
+      if (nextRole === 'artist') {
+        router.replace('/artist/profile');
+      } else {
+        router.replace('/dashboard');
+      }
     } catch (err: any) {
       console.error('Signup error:', err);
       setMsg('❌ Erreur : ' + (err?.message ?? 'inconnue'));
