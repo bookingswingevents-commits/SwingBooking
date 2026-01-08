@@ -105,6 +105,7 @@ export default function AdminResidencyDetailPage({
   const [editCompanion, setEditCompanion] = useState(true);
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editIsOpen, setEditIsOpen] = useState(true);
+  const [isEditingConditions, setIsEditingConditions] = useState(false);
 
   async function loadData() {
     if (!residencyId) {
@@ -330,12 +331,21 @@ export default function AdminResidencyDetailPage({
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
       setSuccess('Conditions mises a jour.');
+      setIsEditingConditions(false);
       await loadData();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la mise a jour');
     } finally {
       setActionLoading(false);
     }
+  }
+
+  function cancelEditConditions() {
+    if (!residency) return;
+    setEditLodging(!!residency.lodging_included);
+    setEditMeals(!!residency.meals_included);
+    setEditCompanion(!!residency.companion_included);
+    setIsEditingConditions(false);
   }
 
   async function deleteResidency() {
@@ -440,11 +450,46 @@ export default function AdminResidencyDetailPage({
 
       <section className="rounded-xl border p-4 space-y-2">
         <h2 className="font-semibold">Conditions hebergement / repas</h2>
-        <div className="text-sm text-slate-600">
-          {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'} •{' '}
-          {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
-          {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
-        </div>
+        {!isEditingConditions ? (
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="px-2 py-1 rounded-full border">
+              {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'}
+            </span>
+            <span className="px-2 py-1 rounded-full border">
+              {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'}
+            </span>
+            <span className="px-2 py-1 rounded-full border">
+              {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={editLodging}
+                onChange={(e) => setEditLodging(e.target.checked)}
+              />
+              Logement inclus
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={editMeals}
+                onChange={(e) => setEditMeals(e.target.checked)}
+              />
+              Repas inclus
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={editCompanion}
+                onChange={(e) => setEditCompanion(e.target.checked)}
+              />
+              Accompagnant inclus
+            </label>
+          </div>
+        )}
         {success ? (
           <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
             {success}
@@ -457,9 +502,24 @@ export default function AdminResidencyDetailPage({
           Semaine forte: 4 prestations • 2 cachets (300€ net)
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
-            Enregistrer les conditions
-          </button>
+          {isEditingConditions ? (
+            <>
+              <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
+                Enregistrer
+              </button>
+              <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
+                Annuler
+              </button>
+            </>
+          ) : (
+            <button
+              className="btn"
+              onClick={() => setIsEditingConditions(true)}
+              disabled={actionLoading}
+            >
+              Modifier
+            </button>
+          )}
         </div>
       </section>
 
