@@ -15,6 +15,10 @@ type ResidencyRow = {
   start_date: string;
   end_date: string;
   mode?: 'RANGE' | 'DATES' | null;
+  terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | null;
+  fee_amount_cents?: number | null;
+  fee_currency?: string | null;
+  fee_is_net?: boolean | null;
   is_public: boolean;
   is_open: boolean;
   lodging_included: boolean;
@@ -103,6 +107,9 @@ export default function AdminResidencyDetailPage({
   const [editLodging, setEditLodging] = useState(true);
   const [editMeals, setEditMeals] = useState(true);
   const [editCompanion, setEditCompanion] = useState(true);
+  const [editTermsMode, setEditTermsMode] = useState<'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY'>('WEEKLY');
+  const [editFeeAmount, setEditFeeAmount] = useState('');
+  const [editFeeIsNet, setEditFeeIsNet] = useState(true);
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editIsOpen, setEditIsOpen] = useState(true);
   const [isEditingConditions, setIsEditingConditions] = useState(false);
@@ -135,7 +142,7 @@ export default function AdminResidencyDetailPage({
 
       const resRes = await supabase
         .from('residencies')
-        .select('id, name, start_date, end_date, mode, is_public, is_open, lodging_included, meals_included, companion_included, clients(name)')
+        .select('id, name, start_date, end_date, mode, terms_mode, fee_amount_cents, fee_currency, fee_is_net, is_public, is_open, lodging_included, meals_included, companion_included, clients(name)')
         .eq('id', residencyId)
         .maybeSingle();
       if (resRes.error) throw resRes.error;
@@ -175,6 +182,13 @@ export default function AdminResidencyDetailPage({
       setEditLodging(!!resRow.lodging_included);
       setEditMeals(!!resRow.meals_included);
       setEditCompanion(!!resRow.companion_included);
+      setEditTermsMode((resRow.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY') ?? 'WEEKLY');
+      setEditFeeAmount(
+        typeof resRow.fee_amount_cents === 'number'
+          ? String((resRow.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
+          : ''
+      );
+      setEditFeeIsNet(resRow.fee_is_net ?? true);
       setEditIsPublic(!!resRow.is_public);
       setEditIsOpen(!!resRow.is_open);
       setInvitations((invRes.data as InvitationRow[]) ?? []);
@@ -318,15 +332,29 @@ export default function AdminResidencyDetailPage({
     try {
       setActionLoading(true);
       setError(null);
+      const payload: Record<string, any> = {
+        terms_mode: editTermsMode,
+      };
+      if (editTermsMode === 'SIMPLE_FEE') {
+        const num = Number(editFeeAmount.replace(',', '.'));
+        if (!Number.isFinite(num) || num <= 0) {
+          setError('Montant du cachet invalide.');
+          setActionLoading(false);
+          return;
+        }
+        payload.fee_amount_cents = Math.round(num * 100);
+        payload.fee_currency = 'EUR';
+        payload.fee_is_net = editFeeIsNet;
+      } else if (editTermsMode === 'INCLUDED') {
+        payload.lodging_included = editLodging;
+        payload.meals_included = editMeals;
+        payload.companion_included = editCompanion;
+      }
       const res = await fetch(`/api/admin/residencies/${residency.id}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lodging_included: editLodging,
-          meals_included: editMeals,
-          companion_included: editCompanion,
-        }),
+        body: JSON.stringify(payload),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
@@ -345,6 +373,13 @@ export default function AdminResidencyDetailPage({
     setEditLodging(!!residency.lodging_included);
     setEditMeals(!!residency.meals_included);
     setEditCompanion(!!residency.companion_included);
+    setEditTermsMode((residency.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY') ?? 'WEEKLY');
+    setEditFeeAmount(
+      typeof residency.fee_amount_cents === 'number'
+        ? String((residency.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
+        : ''
+    );
+    setEditFeeIsNet(residency.fee_is_net ?? true);
     setIsEditingConditions(false);
   }
 
@@ -451,43 +486,106 @@ export default function AdminResidencyDetailPage({
       <section className="rounded-xl border p-4 space-y-2">
         <h2 className="font-semibold">Conditions hebergement / repas</h2>
         {!isEditingConditions ? (
-          <div className="flex flex-wrap gap-2 text-xs">
-            <span className="px-2 py-1 rounded-full border">
-              {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'}
-            </span>
-            <span className="px-2 py-1 rounded-full border">
-              {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'}
-            </span>
-            <span className="px-2 py-1 rounded-full border">
-              {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
-            </span>
-          </div>
+          <>
+            {residency.terms_mode === 'SIMPLE_FEE' ? (
+              <div className="text-sm text-slate-700">
+                Cachet unique :{' '}
+                <strong>
+                  {typeof residency.fee_amount_cents === 'number'
+                    ? `${(residency.fee_amount_cents / 100).toLocaleString('fr-FR')} ${residency.fee_currency ?? 'EUR'}`
+                    : '—'}
+                </strong>{' '}
+                {residency.fee_is_net === false ? '(brut)' : '(net)'}
+              </div>
+            ) : null}
+            {residency.terms_mode === 'INCLUDED' ? (
+              <div className="flex flex-wrap gap-2 text-xs">
+                <span className="px-2 py-1 rounded-full border">
+                  {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'}
+                </span>
+                <span className="px-2 py-1 rounded-full border">
+                  {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'}
+                </span>
+                <span className="px-2 py-1 rounded-full border">
+                  {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
+                </span>
+              </div>
+            ) : null}
+            {residency.terms_mode === 'WEEKLY' ? (
+              <div className="text-sm text-slate-600">
+                Semaine calme: 2 prestations • 1 cachet (150€ net)
+                <br />
+                Semaine forte: 4 prestations • 2 cachets (300€ net)
+              </div>
+            ) : null}
+          </>
         ) : (
-          <div className="flex flex-wrap gap-4 text-sm">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editLodging}
-                onChange={(e) => setEditLodging(e.target.checked)}
-              />
-              Logement inclus
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editMeals}
-                onChange={(e) => setEditMeals(e.target.checked)}
-              />
-              Repas inclus
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editCompanion}
-                onChange={(e) => setEditCompanion(e.target.checked)}
-              />
-              Accompagnant inclus
-            </label>
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <label className="text-sm font-medium">Type de conditions</label>
+              <select
+                className="border rounded-lg px-2 py-1 text-sm"
+                value={editTermsMode}
+                onChange={(e) => setEditTermsMode(e.target.value as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY')}
+              >
+                <option value="SIMPLE_FEE">Cachet unique</option>
+                <option value="INCLUDED">Hebergement / repas / accompagnant</option>
+                <option value="WEEKLY">Semaine calme / forte</option>
+              </select>
+            </div>
+            {editTermsMode === 'SIMPLE_FEE' ? (
+              <div className="grid gap-3 md:grid-cols-[200px_auto] items-center">
+                <input
+                  className="border rounded-lg px-3 py-2"
+                  placeholder="Montant (EUR)"
+                  value={editFeeAmount}
+                  onChange={(e) => setEditFeeAmount(e.target.value)}
+                />
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={editFeeIsNet}
+                    onChange={(e) => setEditFeeIsNet(e.target.checked)}
+                  />
+                  Cachet net
+                </label>
+              </div>
+            ) : null}
+            {editTermsMode === 'INCLUDED' ? (
+              <div className="flex flex-wrap gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editLodging}
+                    onChange={(e) => setEditLodging(e.target.checked)}
+                  />
+                  Logement inclus
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editMeals}
+                    onChange={(e) => setEditMeals(e.target.checked)}
+                  />
+                  Repas inclus
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editCompanion}
+                    onChange={(e) => setEditCompanion(e.target.checked)}
+                  />
+                  Accompagnant inclus
+                </label>
+              </div>
+            ) : null}
+            {editTermsMode === 'WEEKLY' ? (
+              <div className="text-sm text-slate-600">
+                Semaine calme: 2 prestations • 1 cachet (150€ net)
+                <br />
+                Semaine forte: 4 prestations • 2 cachets (300€ net)
+              </div>
+            ) : null}
           </div>
         )}
         {success ? (
@@ -495,12 +593,6 @@ export default function AdminResidencyDetailPage({
             {success}
           </div>
         ) : null}
-        <div className="text-sm text-slate-600">
-          Semaine calme: 2 prestations • 1 cachet (150€ net)
-        </div>
-        <div className="text-sm text-slate-600">
-          Semaine forte: 4 prestations • 2 cachets (300€ net)
-        </div>
         <div className="flex flex-wrap gap-2">
           {isEditingConditions ? (
             <>
