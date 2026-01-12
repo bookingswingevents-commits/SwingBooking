@@ -113,6 +113,7 @@ export default function ArtistProgrammationDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyWeekId, setBusyWeekId] = useState<string | null>(null);
+  const [busyDate, setBusyDate] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -189,6 +190,30 @@ export default function ArtistProgrammationDetailPage({
     return map;
   }, [applications]);
 
+  const weekByDate = useMemo(() => {
+    const map = new Map<string, ResidencyWeek>();
+    for (const w of weeks) {
+      if (w.start_date_sun) map.set(w.start_date_sun, w);
+    }
+    return map;
+  }, [weeks]);
+
+  async function refreshWeeksAndApps(currentArtistId: string) {
+    const [weeksRes, appsRes] = await Promise.all([
+      supabase
+        .from('residency_weeks')
+        .select('id, start_date_sun, end_date_sun, type, performances_count, fee_cents, status, week_bookings(id, artist_id, status)')
+        .eq('residency_id', residencyId)
+        .order('start_date_sun', { ascending: true }),
+      supabase
+        .from('week_applications')
+        .select('id, residency_week_id, status')
+        .eq('artist_id', currentArtistId),
+    ]);
+    if (!weeksRes.error) setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
+    if (!appsRes.error) setApplications((appsRes.data as WeekApplication[]) ?? []);
+  }
+
   async function apply(week: ResidencyWeek) {
     if (!artistId) return;
     try {
@@ -238,6 +263,29 @@ export default function ArtistProgrammationDetailPage({
       setError(e?.message ?? 'Impossible de retirer');
     } finally {
       setBusyWeekId(null);
+    }
+  }
+
+  async function applyDate(date: string) {
+    if (!artistId || !residencyId) return;
+    try {
+      setBusyDate(date);
+      setError(null);
+      const res = await fetch('/api/artist/programmations/apply', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ residency_id: residencyId, date }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || 'Impossible de se positionner.');
+      }
+      await refreshWeeksAndApps(artistId);
+    } catch (e: any) {
+      setError(e?.message ?? 'Impossible de se positionner.');
+    } finally {
+      setBusyDate(null);
     }
   }
 
@@ -343,21 +391,63 @@ export default function ArtistProgrammationDetailPage({
             </div>
           ) : (
             occurrences.map((occ) => {
-              const status = residency.is_open ? 'À confirmer' : 'Sur invitation uniquement';
-              const badgeClass = residency.is_open
-                ? 'bg-amber-100 text-amber-700'
-                : 'bg-slate-100 text-slate-600';
+              const week = weekByDate.get(occ.date);
+              const app = week ? appByWeek.get(week.id) : undefined;
+              const bookings = week ? (toArray(week.week_bookings) as WeekBooking[]) : [];
+              const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
+              const isMyConfirmed =
+                confirmedBooking?.artist_id && confirmedBooking.artist_id === artistId;
+              const isApplied = app?.status === 'APPLIED';
+              const isRejected = app?.status === 'REJECTED';
+              const status = !residency.is_open
+                ? 'Sur invitation uniquement'
+                : isMyConfirmed
+                ? 'Confirmé'
+                : isRejected
+                ? 'Refusé'
+                : isApplied
+                ? 'En attente'
+                : 'Disponible ?';
+              const badgeClass =
+                status === 'Confirmé'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : status === 'En attente'
+                  ? 'bg-amber-100 text-amber-700'
+                  : status === 'Refusé'
+                  ? 'bg-rose-100 text-rose-700'
+                  : status === 'Disponible ?'
+                  ? 'bg-slate-100 text-slate-600'
+                  : 'bg-slate-100 text-slate-600';
               return (
-                <div key={occ.id} className="rounded-xl border p-4 flex items-center justify-between">
-                  <div className="font-semibold">{fmtDateFR(occ.date)}</div>
-                  <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>{status}</span>
+                <div key={occ.id} className="rounded-xl border p-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold">{fmtDateFR(occ.date)}</div>
+                    <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>{status}</span>
+                  </div>
+                  {isApplied ? (
+                    <div className="text-sm text-slate-600">Candidature envoyée.</div>
+                  ) : null}
+                  {isMyConfirmed ? (
+                    <div className="text-sm text-slate-600">Vous êtes confirmé sur cette date.</div>
+                  ) : null}
+                  {!residency.is_open ? (
+                    <div className="text-sm text-slate-500">Sur invitation uniquement.</div>
+                  ) : null}
+                  {residency.is_open && !isApplied && !isMyConfirmed && !isRejected ? (
+                    <div>
+                      <button
+                        className="btn btn-primary"
+                        disabled={busyDate === occ.date}
+                        onClick={() => applyDate(occ.date)}
+                      >
+                        {busyDate === occ.date ? 'Envoi…' : 'Je suis disponible'}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               );
             })
           )}
-          {!residency.is_open ? (
-            <div className="text-sm text-slate-500">Sur invitation uniquement.</div>
-          ) : null}
         </section>
       ) : (
         <section className="space-y-3">
