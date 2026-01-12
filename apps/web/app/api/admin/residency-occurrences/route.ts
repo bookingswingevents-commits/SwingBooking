@@ -61,11 +61,12 @@ export async function POST(req: Request) {
     const body = await req.json();
     const residency_id = body?.residency_id as string | undefined;
     const date = body?.date as string | undefined;
+    const dates = Array.isArray(body?.dates) ? (body.dates as string[]) : null;
     const start_time = body?.start_time ? String(body.start_time) : null;
     const end_time = body?.end_time ? String(body.end_time) : null;
     const notes = body?.notes ? String(body.notes) : null;
 
-    if (!residency_id || !date) {
+    if (!residency_id || (!date && (!dates || dates.length === 0))) {
       return NextResponse.json({ ok: false, error: 'MISSING_FIELDS' }, { status: 400 });
     }
     if (!isUuid(residency_id)) {
@@ -75,6 +76,21 @@ export async function POST(req: Request) {
     const supaSrv = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    if (dates && dates.length > 0) {
+      const rows = dates.map((d) => ({
+        residency_id,
+        date: d,
+        start_time,
+        end_time,
+        notes,
+      }));
+      const { error } = await supaSrv.from('residency_occurrences').insert(rows);
+      if (error) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true, count: rows.length });
+    }
 
     const { data, error } = await supaSrv
       .from('residency_occurrences')

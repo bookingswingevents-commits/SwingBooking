@@ -696,7 +696,11 @@ export default function AdminResidencyDetailPage({
   }
 
   async function addDates() {
-    if (!residency) return;
+    const residencyIdValue = residency?.id || residencyId;
+    if (!residencyIdValue) {
+      setAddDatesError('Programmation manquante.');
+      return;
+    }
     if (selectedDates.length === 0) {
       setAddDatesError('Sélectionnez au moins une date.');
       return;
@@ -716,10 +720,16 @@ export default function AdminResidencyDetailPage({
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ residency_id: residency.id, dates: newDates }),
+        body: JSON.stringify({ residency_id: residencyIdValue, dates: newDates }),
       });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Ajout impossible');
+      if (!json.ok) {
+        const message =
+          json.error === 'MISSING_FIELDS'
+            ? 'Merci de sélectionner au moins une date.'
+            : labelForError(json.error) || 'Ajout impossible';
+        throw new Error(message);
+      }
       const previewDates = newDates.slice(0, 8).map((date) => fmtDateFR(date));
       const suffix = newDates.length > 8 ? '…' : '';
       setAddDatesSuccess(
