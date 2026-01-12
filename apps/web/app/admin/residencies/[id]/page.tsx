@@ -727,7 +727,6 @@ export default function AdminResidencyDetailPage({
           newDates.length > 1 ? 's' : ''
         } : ${previewDates.join(', ')}${suffix}`
       );
-      setAddDatesRaw('');
       await loadData();
       setAddDatesOpen(false);
     } catch (e: any) {
