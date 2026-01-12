@@ -737,13 +737,16 @@ export default function AdminResidencyDetailPage({
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Ajout impossible');
+      const previewDates = newDates.slice(0, 8).map((date) => fmtDateFR(date));
+      const suffix = newDates.length > 8 ? '…' : '';
       setAddDatesSuccess(
         `✅ ${newDates.length} date${newDates.length > 1 ? 's' : ''} ajoutée${
           newDates.length > 1 ? 's' : ''
-        } : ${newDates.join(', ')}`
+        } : ${previewDates.join(', ')}${suffix}`
       );
       setAddDatesRaw('');
       await loadData();
+      setAddDatesOpen(false);
     } catch (e: any) {
       setAddDatesError(e?.message ?? 'Erreur lors de l’ajout des dates');
     } finally {
@@ -1260,6 +1263,9 @@ export default function AdminResidencyDetailPage({
               Ajouter des dates
             </button>
           </div>
+          {addDatesSuccess ? (
+            <div className="text-sm text-emerald-600">{addDatesSuccess}</div>
+          ) : null}
           {addDatesOpen ? (
             <div className="rounded-xl border p-4 space-y-3">
               <div className="text-sm font-medium">Dates (1 par ligne, format YYYY-MM-DD)</div>
@@ -1288,9 +1294,6 @@ export default function AdminResidencyDetailPage({
               ) : null}
               {addDatesError ? (
                 <div className="text-sm text-rose-600">{addDatesError}</div>
-              ) : null}
-              {addDatesSuccess ? (
-                <div className="text-sm text-emerald-600">{addDatesSuccess}</div>
               ) : null}
               <div className="flex flex-wrap gap-2">
                 <button
