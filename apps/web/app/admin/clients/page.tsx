@@ -9,11 +9,6 @@ type ClientRow = {
   contact_name: string | null;
   contact_email: string | null;
   contact_phone: string | null;
-  billing_address_line1: string | null;
-  billing_address_line2: string | null;
-  billing_zip: string | null;
-  billing_city: string | null;
-  billing_country: string | null;
   default_event_address_line1: string | null;
   default_event_address_line2: string | null;
   default_event_zip: string | null;
@@ -34,11 +29,6 @@ export default function AdminClientsPage() {
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
-  const [billingAddress1, setBillingAddress1] = useState('');
-  const [billingAddress2, setBillingAddress2] = useState('');
-  const [billingZip, setBillingZip] = useState('');
-  const [billingCity, setBillingCity] = useState('');
-  const [billingCountry, setBillingCountry] = useState('');
   const [eventAddress1, setEventAddress1] = useState('');
   const [eventAddress2, setEventAddress2] = useState('');
   const [eventZip, setEventZip] = useState('');
@@ -50,11 +40,6 @@ export default function AdminClientsPage() {
   const [editContactName, setEditContactName] = useState('');
   const [editContactEmail, setEditContactEmail] = useState('');
   const [editContactPhone, setEditContactPhone] = useState('');
-  const [editBillingAddress1, setEditBillingAddress1] = useState('');
-  const [editBillingAddress2, setEditBillingAddress2] = useState('');
-  const [editBillingZip, setEditBillingZip] = useState('');
-  const [editBillingCity, setEditBillingCity] = useState('');
-  const [editBillingCountry, setEditBillingCountry] = useState('');
   const [editEventAddress1, setEditEventAddress1] = useState('');
   const [editEventAddress2, setEditEventAddress2] = useState('');
   const [editEventZip, setEditEventZip] = useState('');
@@ -99,11 +84,6 @@ export default function AdminClientsPage() {
           contact_name: contactName,
           contact_email: contactEmail,
           contact_phone: contactPhone,
-          billing_address_line1: billingAddress1,
-          billing_address_line2: billingAddress2,
-          billing_zip: billingZip,
-          billing_city: billingCity,
-          billing_country: billingCountry,
           default_event_address_line1: eventAddress1,
           default_event_address_line2: eventAddress2,
           default_event_zip: eventZip,
@@ -118,11 +98,6 @@ export default function AdminClientsPage() {
       setContactName('');
       setContactEmail('');
       setContactPhone('');
-      setBillingAddress1('');
-      setBillingAddress2('');
-      setBillingZip('');
-      setBillingCity('');
-      setBillingCountry('');
       setEventAddress1('');
       setEventAddress2('');
       setEventZip('');
@@ -143,11 +118,6 @@ export default function AdminClientsPage() {
     setEditContactName(client.contact_name ?? '');
     setEditContactEmail(client.contact_email ?? '');
     setEditContactPhone(client.contact_phone ?? '');
-    setEditBillingAddress1(client.billing_address_line1 ?? '');
-    setEditBillingAddress2(client.billing_address_line2 ?? '');
-    setEditBillingZip(client.billing_zip ?? '');
-    setEditBillingCity(client.billing_city ?? '');
-    setEditBillingCountry(client.billing_country ?? '');
     setEditEventAddress1(client.default_event_address_line1 ?? '');
     setEditEventAddress2(client.default_event_address_line2 ?? '');
     setEditEventZip(client.default_event_zip ?? '');
@@ -179,11 +149,6 @@ export default function AdminClientsPage() {
           contact_name: editContactName,
           contact_email: editContactEmail,
           contact_phone: editContactPhone,
-          billing_address_line1: editBillingAddress1,
-          billing_address_line2: editBillingAddress2,
-          billing_zip: editBillingZip,
-          billing_city: editBillingCity,
-          billing_country: editBillingCountry,
           default_event_address_line1: editEventAddress1,
           default_event_address_line2: editEventAddress2,
           default_event_zip: editEventZip,
@@ -260,39 +225,6 @@ export default function AdminClientsPage() {
         <div className="grid gap-3 md:grid-cols-2">
           <input
             className="border rounded-lg px-3 py-2"
-            placeholder="Adresse facturation ligne 1"
-            value={billingAddress1}
-            onChange={(e) => setBillingAddress1(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Adresse facturation ligne 2"
-            value={billingAddress2}
-            onChange={(e) => setBillingAddress2(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Code postal facturation"
-            value={billingZip}
-            onChange={(e) => setBillingZip(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Ville facturation"
-            value={billingCity}
-            onChange={(e) => setBillingCity(e.target.value)}
-          />
-          <input
-            className="border rounded-lg px-3 py-2"
-            placeholder="Pays facturation"
-            value={billingCountry}
-            onChange={(e) => setBillingCountry(e.target.value)}
-          />
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            className="border rounded-lg px-3 py-2"
             placeholder="Adresse evenement ligne 1"
             value={eventAddress1}
             onChange={(e) => setEventAddress1(e.target.value)}
@@ -343,15 +275,27 @@ export default function AdminClientsPage() {
           <div key={c.id} className="rounded-xl border p-4 flex items-center justify-between gap-4 bg-white">
             <div>
               <div className="font-semibold">{c.name}</div>
-              <div className="text-sm text-slate-500">
-                {c.default_event_city || '—'}
-                {c.contact_email ? ` • ${c.contact_email}` : ''}
-              </div>
-              <div className="text-xs text-slate-400">{c.id}</div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button className="btn" onClick={() => openEdit(c)}>
-                Modifier
+          <div className="text-sm text-slate-500">
+            {c.default_event_city || '—'}
+            {c.contact_email ? ` • ${c.contact_email}` : ''}
+          </div>
+          <button
+            type="button"
+            className="text-xs text-slate-500 underline"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(c.id);
+              } catch (_e) {
+                setError('Impossible de copier l’identifiant.');
+              }
+            }}
+          >
+            Copier l’identifiant
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn" onClick={() => openEdit(c)}>
+            Modifier
               </button>
             </div>
           </div>
@@ -392,39 +336,6 @@ export default function AdminClientsPage() {
                   placeholder="Contact téléphone"
                   value={editContactPhone}
                   onChange={(e) => setEditContactPhone(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <input
-                  className="border rounded-lg px-3 py-2"
-                  placeholder="Adresse facturation ligne 1"
-                  value={editBillingAddress1}
-                  onChange={(e) => setEditBillingAddress1(e.target.value)}
-                />
-                <input
-                  className="border rounded-lg px-3 py-2"
-                  placeholder="Adresse facturation ligne 2"
-                  value={editBillingAddress2}
-                  onChange={(e) => setEditBillingAddress2(e.target.value)}
-                />
-                <input
-                  className="border rounded-lg px-3 py-2"
-                  placeholder="Code postal facturation"
-                  value={editBillingZip}
-                  onChange={(e) => setEditBillingZip(e.target.value)}
-                />
-                <input
-                  className="border rounded-lg px-3 py-2"
-                  placeholder="Ville facturation"
-                  value={editBillingCity}
-                  onChange={(e) => setEditBillingCity(e.target.value)}
-                />
-                <input
-                  className="border rounded-lg px-3 py-2"
-                  placeholder="Pays facturation"
-                  value={editBillingCountry}
-                  onChange={(e) => setEditBillingCountry(e.target.value)}
                 />
               </div>
 
