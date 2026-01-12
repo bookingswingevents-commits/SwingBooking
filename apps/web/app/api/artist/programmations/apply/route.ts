@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
-import { getArtistIdentity } from '@/lib/artistIdentity';
 import { isUuid } from '@/lib/uuid';
 
 export const runtime = 'nodejs';
@@ -14,62 +13,90 @@ function isValidIsoDate(value: string) {
 }
 
 export async function POST(req: Request) {
+  const debug: Record<string, any> = { step: 'start' };
   try {
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'Connexion requise.' }, { status: 401 });
-    }
-
-    const identity = await getArtistIdentity(supabase as any);
-    if (!identity.artistId) {
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    debug.step = 'auth';
+    debug.userId = user?.id ?? null;
+    if (userErr || !user) {
+      console.error('[artist/programmations/apply] NO_USER', debug);
       return NextResponse.json(
-        { ok: false, error: 'Compte artiste non lié.' },
-        { status: 403 }
+        { ok: false, error: 'Vous devez être connecté.' },
+        { status: 401 }
       );
     }
 
     const body = await req.json().catch(() => ({}));
     const residency_id = body?.residency_id as string | undefined;
     const date = body?.date as string | undefined;
+    debug.residency_id = residency_id ?? null;
+    debug.date = date ?? null;
 
     if (!residency_id || !date) {
+      console.error('[artist/programmations/apply] MISSING_FIELDS', debug);
       return NextResponse.json(
         { ok: false, error: 'Champs manquants (programmation, date).' },
         { status: 400 }
       );
     }
     if (!isUuid(residency_id)) {
+      console.error('[artist/programmations/apply] INVALID_RESIDENCY_ID', debug);
       return NextResponse.json(
         { ok: false, error: 'Identifiant de programmation invalide.' },
         { status: 400 }
       );
     }
     if (!isValidIsoDate(date)) {
+      console.error('[artist/programmations/apply] INVALID_DATE', debug);
       return NextResponse.json(
         { ok: false, error: 'Date invalide.' },
         { status: 400 }
       );
     }
 
+    debug.step = 'artist_lookup';
+    const { data: artistRow, error: artistErr } = await supabase
+      .from('artists')
+      .select('id')
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (artistErr || !artistRow?.id) {
+      console.error('[artist/programmations/apply] NO_ARTIST_LINK', {
+        ...debug,
+        error: artistErr?.message ?? null,
+      });
+      return NextResponse.json(
+        { ok: false, error: 'Votre compte artiste n’est pas relié. Contactez l’administrateur.' },
+        { status: 400 }
+      );
+    }
+
+    debug.step = 'residency_lookup';
     const { data: resRow, error: resErr } = await supabase
       .from('residencies')
       .select('id, mode, is_public, is_open, start_date, end_date')
       .eq('id', residency_id)
       .maybeSingle();
     if (resErr || !resRow) {
+      console.error('[artist/programmations/apply] RESIDENCY_NOT_FOUND', {
+        ...debug,
+        error: resErr?.message ?? null,
+      });
       return NextResponse.json(
         { ok: false, error: 'Programmation introuvable.' },
         { status: 404 }
       );
     }
     if (!resRow.is_public || !resRow.is_open) {
+      console.error('[artist/programmations/apply] RESIDENCY_CLOSED', debug);
       return NextResponse.json(
-        { ok: false, error: 'Programmation fermée aux candidatures.' },
-        { status: 403 }
+        { ok: false, error: 'Cette programmation n’est pas ouverte aux candidatures.' },
+        { status: 400 }
       );
     }
 
+    debug.step = 'date_check';
     if (resRow.mode === 'DATES') {
       const { data: occRow, error: occErr } = await supabase
         .from('residency_occurrences')
@@ -78,6 +105,10 @@ export async function POST(req: Request) {
         .eq('date', date)
         .maybeSingle();
       if (occErr) {
+        console.error('[artist/programmations/apply] OCC_LOOKUP_ERROR', {
+          ...debug,
+          error: occErr?.message ?? null,
+        });
         return NextResponse.json(
           { ok: false, error: 'Impossible de vérifier la date.' },
           { status: 500 }
@@ -89,41 +120,30 @@ export async function POST(req: Request) {
           { status: 400 }
         );
       }
-    } else {
-      if (date < resRow.start_date || date > resRow.end_date) {
-        return NextResponse.json(
-          { ok: false, error: 'Cette date ne fait pas partie de cette programmation.' },
-          { status: 400 }
-        );
-      }
-    }
-
-    const { data: existingApp, error: appErr } = await supabase
-      .from('residency_applications')
-      .select('status')
-      .eq('residency_id', residency_id)
-      .eq('artist_id', identity.artistId)
-      .eq('date', date)
-      .maybeSingle();
-    if (appErr) {
+    } else if (date < resRow.start_date || date > resRow.end_date) {
       return NextResponse.json(
-        { ok: false, error: 'Impossible de vérifier la candidature.' },
-        { status: 500 }
+        { ok: false, error: 'Cette date ne fait pas partie de cette programmation.' },
+        { status: 400 }
       );
     }
-    if (existingApp?.status) {
-      return NextResponse.json({ ok: true, status: existingApp.status });
-    }
 
+    debug.step = 'insert';
     const { error: insErr } = await supabase
       .from('residency_applications')
       .insert({
         residency_id,
-        artist_id: identity.artistId,
+        artist_id: artistRow.id,
         date,
         status: 'PENDING',
       });
     if (insErr) {
+      if ((insErr as any)?.code === '23505') {
+        return NextResponse.json({ ok: true, status: 'PENDING' });
+      }
+      console.error('[artist/programmations/apply] INSERT_ERROR', {
+        ...debug,
+        error: insErr.message,
+      });
       return NextResponse.json(
         { ok: false, error: 'Envoi de la candidature impossible.' },
         { status: 500 }
@@ -132,8 +152,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, status: 'PENDING' });
   } catch (e: any) {
+    console.error('[artist/programmations/apply] UNHANDLED', {
+      error: e?.message ?? e,
+    });
     return NextResponse.json(
-      { ok: false, error: e?.message ?? 'Erreur serveur' },
+      { ok: false, error: 'Erreur serveur.' },
       { status: 500 }
     );
   }
