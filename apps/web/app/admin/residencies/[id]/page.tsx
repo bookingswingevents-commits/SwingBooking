@@ -87,6 +87,27 @@ type ResidencyOccurrence = {
   notes: string | null;
 };
 
+type ResidencyApplication = {
+  id: string;
+  date: string;
+  status: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'CANCELLED';
+  artists?: {
+    id: string;
+    stage_name: string | null;
+    contact_phone: string | null;
+    contact_email: string | null;
+    instagram_url: string | null;
+    website_url: string | null;
+  } | null | {
+    id: string;
+    stage_name: string | null;
+    contact_phone: string | null;
+    contact_email: string | null;
+    instagram_url: string | null;
+    website_url: string | null;
+  }[];
+};
+
 type InvitationRow = {
   id: string;
   token: string;
@@ -192,6 +213,7 @@ export default function AdminResidencyDetailPage({
   const [residency, setResidency] = useState<ResidencyRow | null>(null);
   const [weeks, setWeeks] = useState<ResidencyWeek[]>([]);
   const [occurrences, setOccurrences] = useState<ResidencyOccurrence[]>([]);
+  const [residencyApplications, setResidencyApplications] = useState<ResidencyApplication[]>([]);
   const [invitations, setInvitations] = useState<InvitationRow[]>([]);
   const [artists, setArtists] = useState<ArtistOption[]>([]);
   const [selectedArtists, setSelectedArtists] = useState<Record<string, boolean>>({});
@@ -272,6 +294,13 @@ export default function AdminResidencyDetailPage({
         .order('created_at', { ascending: false });
       if (invRes.error) throw invRes.error;
 
+      const appsRes = await supabase
+        .from('residency_applications')
+        .select('id, date, status, artists(id, stage_name, contact_phone, contact_email, instagram_url, website_url)')
+        .eq('residency_id', residencyId)
+        .order('date', { ascending: true });
+      if (appsRes.error) throw appsRes.error;
+
       let datesInRes: string[] | null = null;
       if (resRow?.mode === 'DATES') {
         const occRes = await supabase
@@ -322,6 +351,7 @@ export default function AdminResidencyDetailPage({
       setAddressCity(resRow.event_address_city ?? '');
       setAddressCountry(resRow.event_address_country ?? '');
       setInvitations((invRes.data as InvitationRow[]) ?? []);
+      setResidencyApplications((appsRes.data as ResidencyApplication[]) ?? []);
 
       if (datesInRes && datesInRes.length > 0) {
         await loadDateStatuses(datesInRes);
@@ -343,6 +373,35 @@ export default function AdminResidencyDetailPage({
       setArtists(json.data ?? []);
     } catch {
       /* ignore */
+    }
+  }
+
+  async function updateResidencyApplicationStatus(
+    appId: string,
+    status: 'CONFIRMED' | 'DECLINED'
+  ) {
+    try {
+      setActionLoading(true);
+      setError(null);
+      setSuccess(null);
+      const res = await fetch(`/api/admin/residency-applications/${appId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(labelForError(json.error) || 'Mise a jour impossible');
+      }
+      setResidencyApplications((prev) =>
+        prev.map((app) => (app.id === appId ? { ...app, status } : app))
+      );
+      setSuccess(status === 'CONFIRMED' ? 'Candidature confirmée.' : 'Candidature refusée.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la mise a jour');
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -1317,7 +1376,7 @@ export default function AdminResidencyDetailPage({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <div className="font-medium">{fmtDateFR(occ.date)}</div>
-                <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                        <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
                           {status === 'DECLINED'
                             ? 'Tous refusés'
                             : status === 'EMPTY'
@@ -1356,6 +1415,80 @@ export default function AdminResidencyDetailPage({
                       {occ.notes ? (
                         <div className="text-xs text-slate-500">{occ.notes}</div>
                       ) : null}
+                      <div className="pt-2 space-y-2">
+                        <div className="text-xs font-semibold text-slate-700">
+                          Candidatures ({residencyApplications.filter((a) => a.date === occ.date).length})
+                        </div>
+                        {residencyApplications.filter((a) => a.date === occ.date).length === 0 ? (
+                          <div className="text-xs text-slate-500">Aucune candidature.</div>
+                        ) : (
+                          residencyApplications
+                            .filter((a) => a.date === occ.date)
+                            .sort((a, b) => {
+                              const aName = Array.isArray(a.artists)
+                                ? a.artists[0]?.stage_name ?? ''
+                                : a.artists?.stage_name ?? '';
+                              const bName = Array.isArray(b.artists)
+                                ? b.artists[0]?.stage_name ?? ''
+                                : b.artists?.stage_name ?? '';
+                              return aName.localeCompare(bName, 'fr');
+                            })
+                            .map((app) => {
+                              const artist = Array.isArray(app.artists)
+                                ? app.artists[0]
+                                : app.artists;
+                              const statusLabel = labelForStatus(app.status);
+                              const badge =
+                                app.status === 'CONFIRMED'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : app.status === 'PENDING'
+                                  ? 'bg-amber-100 text-amber-700'
+                                  : app.status === 'DECLINED'
+                                  ? 'bg-rose-100 text-rose-700'
+                                  : 'bg-slate-100 text-slate-600';
+                              return (
+                                <div key={app.id} className="flex flex-wrap items-center justify-between gap-2 text-xs border rounded-lg p-2">
+                                  <div className="space-y-1">
+                                    <div className="font-medium">
+                                      {artist?.stage_name || 'Artiste'}
+                                    </div>
+                                    <div className="text-slate-500">
+                                      {artist?.contact_email ? `Email: ${artist.contact_email}` : null}
+                                      {artist?.contact_phone ? ` • Tel: ${artist.contact_phone}` : null}
+                                    </div>
+                                    <div className="text-slate-500">
+                                      {artist?.instagram_url ? `Instagram: ${artist.instagram_url}` : null}
+                                      {artist?.website_url ? ` • Site: ${artist.website_url}` : null}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs px-2 py-1 rounded-full ${badge}`}>
+                                      {statusLabel}
+                                    </span>
+                                    {app.status === 'PENDING' ? (
+                                      <>
+                                        <button
+                                          className="btn btn-primary"
+                                          disabled={actionLoading}
+                                          onClick={() => updateResidencyApplicationStatus(app.id, 'CONFIRMED')}
+                                        >
+                                          Confirmer
+                                        </button>
+                                        <button
+                                          className="btn"
+                                          disabled={actionLoading}
+                                          onClick={() => updateResidencyApplicationStatus(app.id, 'DECLINED')}
+                                        >
+                                          Refuser
+                                        </button>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })
+                        )}
+                      </div>
                     </div>
                     <button
                       className="btn"
