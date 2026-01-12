@@ -14,6 +14,10 @@ type ResidencyRow = {
   name: string;
   start_date: string;
   end_date: string;
+  terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | 'RESIDENCY_WEEKLY' | null;
+  fee_amount_cents?: number | null;
+  fee_currency?: string | null;
+  fee_is_net?: boolean | null;
   lodging_included: boolean;
   meals_included: boolean;
   companion_included: boolean;
@@ -45,8 +49,8 @@ type WeekBooking = {
   status: 'CONFIRMED' | 'CANCELLED';
 };
 
-const formatMoney = (cents: number) =>
-  new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100);
+const formatMoney = (cents: number, currency = 'EUR') =>
+  new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(cents / 100);
 
 const toArray = <T,>(v: T[] | T | null | undefined): T[] => (Array.isArray(v) ? v : v ? [v] : []);
 
@@ -93,7 +97,7 @@ export default function ArtistProgrammationDetailPage({
           supabase
             .from('residencies')
             .select(
-              'id, name, start_date, end_date, lodging_included, meals_included, companion_included, is_public, is_open, clients(name)'
+              'id, name, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, clients(name)'
             )
             .eq('id', residencyId)
             .maybeSingle(),
@@ -203,17 +207,29 @@ export default function ArtistProgrammationDetailPage({
 
       <section className="rounded-xl border p-4 space-y-2">
         <h2 className="font-semibold">Conditions</h2>
-        <div className="text-sm text-slate-600">
-          {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'} •{' '}
-          {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
-          {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
-        </div>
-        <div className="text-sm text-slate-600">
-          Semaine calme: 2 prestations • 1 cachet (150€ net)
-        </div>
-        <div className="text-sm text-slate-600">
-          Semaine forte: 4 prestations • 2 cachets (300€ net)
-        </div>
+        {residency.terms_mode === 'SIMPLE_FEE' ? (
+          <div className="text-sm text-slate-600">
+            Cachet :{' '}
+            {typeof residency.fee_amount_cents === 'number'
+              ? formatMoney(residency.fee_amount_cents, residency.fee_currency ?? 'EUR')
+              : '—'}{' '}
+            ({residency.fee_is_net === false ? 'brut' : 'net'})
+          </div>
+        ) : (
+          <>
+            <div className="text-sm text-slate-600">
+              {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'} •{' '}
+              {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
+              {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
+            </div>
+            <div className="text-sm text-slate-600">
+              Semaine calme: 2 prestations • 1 cachet (150€ net)
+            </div>
+            <div className="text-sm text-slate-600">
+              Semaine forte: 4 prestations • 2 cachets (300€ net)
+            </div>
+          </>
+        )}
       </section>
 
       <section className="space-y-3">
