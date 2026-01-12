@@ -16,6 +16,15 @@ const FORMATIONS = [
 
 type Role = 'artist' | 'venue' | 'admin' | null;
 
+const buildAddress = (line1?: string | null, line2?: string | null, zip?: string | null, city?: string | null) => {
+  const parts = [
+    line1?.trim() || '',
+    line2?.trim() || '',
+    [zip?.trim() || '', city?.trim() || ''].filter(Boolean).join(' '),
+  ].filter(Boolean);
+  return parts.join(', ');
+};
+
 function NewRequestInner() {
   const sp = useSearchParams();
   const router = useRouter();
@@ -38,6 +47,8 @@ function NewRequestInner() {
 
   const [venueCompanyName, setVenueCompanyName] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
+  const [defaultVenueAddress, setDefaultVenueAddress] = useState('');
+  const [useDifferentAddress, setUseDifferentAddress] = useState(true);
   const [location, setLocation] = useState(''); // précision lieu
   const [venueContactName, setVenueContactName] = useState('');
   const [venueContactPhone, setVenueContactPhone] = useState('');
@@ -78,7 +89,41 @@ function NewRequestInner() {
       if (prof?.role) {
         setUserRole(prof.role as Role);
       }
+
+      if (prof?.role === 'venue') {
+        const { data: venue } = await supabase
+          .from('venues')
+          .select(
+            'company_name, contact_name, contact_phone, billing_email, address_line1, address_line2, postal_code, city'
+          )
+          .eq('id', session.user.id)
+          .maybeSingle();
+        if (venue) {
+          if (!venueCompanyName) setVenueCompanyName(venue.company_name ?? '');
+          if (!venueContactName) setVenueContactName(venue.contact_name ?? '');
+          if (!venueContactPhone) setVenueContactPhone(venue.contact_phone ?? '');
+          if (!venueContactEmail) setVenueContactEmail(venue.billing_email ?? (session.user.email ?? ''));
+          const addr = buildAddress(
+            venue.address_line1,
+            venue.address_line2,
+            venue.postal_code,
+            venue.city
+          );
+          if (addr) {
+            setDefaultVenueAddress(addr);
+            setUseDifferentAddress(false);
+          } else {
+            setDefaultVenueAddress('');
+            setUseDifferentAddress(true);
+          }
+        } else if (session.user.email && !venueContactEmail) {
+          setVenueContactEmail(session.user.email);
+        }
+      } else {
+        setUseDifferentAddress(true);
+      }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 2) Charger les formats pour l’affichage
@@ -140,13 +185,18 @@ function NewRequestInner() {
     });
   }, [eventDate, startTime, audience]);
 
+  const resolvedVenueAddress = useMemo(
+    () => (useDifferentAddress ? venueAddress.trim() : defaultVenueAddress.trim()),
+    [useDifferentAddress, venueAddress, defaultVenueAddress]
+  );
+
   // 3) Envoi via API SERVEUR
   async function create(e: React.FormEvent) {
     e.preventDefault();
 
     if (!selected) return alert('Format introuvable.');
     if (!eventDate) return alert("Merci d’indiquer la date de l’événement.");
-    if (!venueAddress) return alert("Merci d’indiquer l’adresse de l’établissement.");
+    if (!resolvedVenueAddress) return alert("Merci d’indiquer l’adresse de l’établissement.");
     if (!venueContactName) return alert('Merci d’indiquer un contact.');
 
     const normalizedEmail = venueContactEmail.trim().toLowerCase();
@@ -158,7 +208,7 @@ function NewRequestInner() {
         date: o.date,
         start_time: o.start_time || null,
         duration_minutes: o.duration_minutes ?? null,
-        address_snapshot: o.address_snapshot || venueAddress || null,
+        address_snapshot: o.address_snapshot || resolvedVenueAddress || null,
         audience_estimate: o.audience_estimate ?? audience ?? null,
       }));
 
@@ -197,7 +247,7 @@ function NewRequestInner() {
           formation,
           // snapshots établissement
           venue_company_name: venueCompanyName || null,
-          venue_address: venueAddress,
+          venue_address: resolvedVenueAddress,
           venue_contact_name: venueContactName,
           venue_contact_phone: venueContactPhone || null,
           venue_contact_email: normalizedEmail,
@@ -517,14 +567,33 @@ function NewRequestInner() {
             <label className="text-sm font-medium" htmlFor="request-venue-address">
               Adresse de l’établissement
             </label>
-            <input
-              id="request-venue-address"
-              className="w-full border p-3 rounded-xl"
-              placeholder="Adresse complète"
-              value={venueAddress}
-              onChange={(e) => setVenueAddress(e.target.value)}
-              required
-            />
+            {defaultVenueAddress ? (
+              <div className="text-sm text-slate-600">
+                Adresse par défaut : <span className="font-medium">{defaultVenueAddress}</span>
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500">
+                Adresse par défaut non renseignée.
+              </div>
+            )}
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={useDifferentAddress}
+                onChange={(e) => setUseDifferentAddress(e.target.checked)}
+              />
+              Adresse différente
+            </label>
+            {useDifferentAddress ? (
+              <input
+                id="request-venue-address"
+                className="w-full border p-3 rounded-xl"
+                placeholder="Adresse complète"
+                value={venueAddress}
+                onChange={(e) => setVenueAddress(e.target.value)}
+                required
+              />
+            ) : null}
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm font-medium">Précision lieu (optionnel)</label>
@@ -680,30 +749,6 @@ function NewRequestInner() {
             placeholder="Précisions repas (catering, tickets resto, horaires…) "
             disabled={!mealProvided}
           />
-        </section>
-
-        {/* Option gestion complète */}
-        <section className="border rounded-2xl p-4 space-y-2 bg-white">
-          <label className="flex items-start gap-3 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={managedBooking}
-              onChange={(e) => setManagedBooking(e.target.checked)}
-            />
-            <div>
-              <div className="font-medium">Déléguer la gestion complète (+69€ HT)</div>
-              <ul className="text-xs text-slate-600 space-y-1 mt-1 list-disc list-inside">
-                <li>Sélection des artistes et relances</li>
-                <li>Échanges logistiques VHR</li>
-                <li>Coordination multi-dates / multi-lieux</li>
-                <li>Feuilles de route prêtes à l’emploi</li>
-              </ul>
-              <p className="text-xs text-amber-700 mt-1">
-                Notre équipe vous contactera pour finaliser cette option.
-              </p>
-            </div>
-          </label>
         </section>
 
         <div className="flex items-center justify-end gap-3">

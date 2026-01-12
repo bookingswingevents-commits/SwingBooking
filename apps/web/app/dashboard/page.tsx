@@ -431,12 +431,20 @@ export default function DashboardPage() {
               upcoming={artistUpcoming}
               residencyUpcomingCount={artistResidencyCount}
             />
+            <div className="grid md:grid-cols-3 gap-3">
+              <KpiCard label="Invitations" value={artistInvites.length} />
+              <KpiCard label="Bookings à venir" value={artistUpcoming.length + artistResidencyCount} />
+              <KpiCard label="Résidences confirmées" value={artistResidencyCount} />
+            </div>
             <div className="flex flex-wrap gap-2">
               <Link href="/artist/calendar" className="btn">
                 Agenda
               </Link>
               <Link href="/artist/roadmaps" className="btn">
                 Feuilles de route
+              </Link>
+              <Link href="/artist/programmations" className="btn">
+                Voir les programmations
               </Link>
             </div>
 
@@ -445,9 +453,6 @@ export default function DashboardPage() {
               <div className="md:col-span-2 border rounded-2xl p-4 space-y-3 bg-white">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold">Mon profil artiste</h2>
-                  <Link href="/artist/profile" className="btn btn-primary">
-                    Modifier mon profil
-                  </Link>
                 </div>
 
                 <div className="space-y-2">
@@ -475,10 +480,10 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* Prochains bookings */}
+              {/* Prochains événements */}
               <div className="border rounded-2xl p-4 space-y-2 bg-white">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Prochains bookings</h3>
+                  <h3 className="text-lg font-semibold">Prochains événements</h3>
                   <Link
                     href="/artist/roadmaps"
                     className="text-sm underline text-[var(--brand)]"
@@ -487,7 +492,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
                 {artistUpcoming.length === 0 ? (
-                  <p className="text-sm text-slate-500">Aucun booking à venir.</p>
+                  <p className="text-sm text-slate-500">Aucun événement à venir.</p>
                 ) : (
                   <ul className="space-y-2">
                     {artistUpcoming.map((b) => (
@@ -510,7 +515,7 @@ export default function DashboardPage() {
 
             <section className="rounded-2xl border p-4 bg-white space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Prochaines résidences</h3>
+                <h3 className="text-lg font-semibold">Prochains bookings</h3>
                 <Link href="/artist/programmations" className="text-sm underline text-[var(--brand)]">
                   Voir toutes
                 </Link>
@@ -667,10 +672,13 @@ export default function DashboardPage() {
             requests={adminRecentRequests}
             proposals={adminRecentProposals}
           />
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/calendar" className="btn">
-              Agenda
-            </Link>
+          <div className="grid md:grid-cols-3 gap-3">
+            <KpiCard label="Demandes" value={adminRecentRequests.length} />
+            <KpiCard label="Propositions" value={adminRecentProposals.length} />
+            <KpiCard
+              label="Événements (futurs)"
+              value={adminRecentRequests.filter((r) => r.event_date && r.event_date >= new Date().toISOString().slice(0, 10)).length}
+            />
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
@@ -761,9 +769,10 @@ function VenueDashboard({
       {/* Header + raccourcis */}
       <div className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h2 className="text-2xl font-bold">Tableau de bord</h2>
+          <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
           <p className="text-slate-600 text-sm">
-            Suivez vos demandes, vos propositions et vos événements à venir.
+            Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
+            et prochains événements.
           </p>
         </div>
         <QuickLinks
@@ -878,6 +887,12 @@ function VenueDashboard({
 
       {/* Catalogue artistes débloqués */}
       <VenueUnlockedArtistsSection items={unlocked} />
+
+      <div className="flex">
+        <Link href="/catalogue" className="btn btn-primary w-full md:w-auto">
+          Parcourir les formats d&apos;événements
+        </Link>
+      </div>
     </section>
   );
 }
@@ -937,10 +952,10 @@ function VenueHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Tableau de bord établissement</h2>
+        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
         <p className="text-slate-600 text-sm">
-          Crée des demandes, suis les propositions et garde une base d&apos;artistes
-          déjà joués chez toi.
+          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
+          et prochains événements.
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
@@ -1002,10 +1017,10 @@ function ArtistHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Tableau de bord artiste</h2>
+        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
         <p className="text-slate-600 text-sm">
-          Centralise tes invitations, tes prochains bookings et l&apos;état de ton
-          profil Swing Booking.
+          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
+          et prochains événements.
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
@@ -1016,17 +1031,6 @@ function ArtistHeaderStats({
             Bookings à venir : <strong>{stats.totalUpcoming}</strong>
           </span>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Link href="/artist/profile" className="btn">
-          Mettre à jour mon profil
-        </Link>
-        <Link href="/artist/programmations" className="btn">
-          📅 Programmations
-        </Link>
-        <Link href="/artist/roadmaps" className="btn">
-          Voir mes feuilles de route
-        </Link>
       </div>
     </div>
   );
@@ -1056,9 +1060,10 @@ function AdminHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Tableau de bord admin</h2>
+        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
         <p className="text-slate-600 text-sm">
-          Suis les demandes, les propositions et les événements à venir sur la plateforme.
+          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
+          et prochains événements.
         </p>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
@@ -1096,7 +1101,10 @@ function AdminHeaderStats({
           Voir toutes les demandes
         </Link>
         <Link href="/admin/programmations" className="btn">
-          📅 Programmations
+          Programmations
+        </Link>
+        <Link href="/admin/calendar" className="btn">
+          Agenda
         </Link>
       </div>
     </div>
@@ -1501,11 +1509,6 @@ function VenueUnlockedArtistsSection({ items }: { items: UnlockedArtist[] }) {
             className="text-xs underline text-[var(--brand)]"
           >
             Voir le catalogue
-          </Link>
-        </div>
-        <div className="mt-3">
-          <Link href="/catalogue" className="text-sm underline text-[var(--brand)]">
-            Parcourir les formats d&apos;événements
           </Link>
         </div>
       </section>
