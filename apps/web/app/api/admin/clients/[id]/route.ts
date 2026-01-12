@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 function env(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
   return v;
 }
 
@@ -63,11 +63,11 @@ export async function PATCH(req: Request, context: any) {
       .maybeSingle();
 
     if (error || !data) {
-      return NextResponse.json({ ok: false, error: error?.message ?? 'Update failed' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: error?.message ?? 'Mise à jour impossible' }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, client: data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message ?? 'Erreur serveur' }, { status: 500 });
   }
 }

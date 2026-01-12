@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
     if (!plan || !['free', 'starter', 'pro', 'premium'].includes(plan)) {
       return NextResponse.json(
-        { ok: false, error: 'Invalid or missing ?plan=' },
+        { ok: false, error: 'Paramètre ?plan= invalide ou manquant' },
         { status: 400 }
       );
     }
@@ -86,13 +86,13 @@ export async function POST(req: Request) {
 
     if (vErr) {
       return NextResponse.json(
-        { ok: false, error: 'Failed to read venue: ' + vErr.message },
+        { ok: false, error: 'Impossible de lire l'établissement: ' + vErr.message },
         { status: 500 }
       );
     }
     if (!venue) {
       return NextResponse.json(
-        { ok: false, error: 'Venue not found' },
+        { ok: false, error: 'Établissement introuvable' },
         { status: 404 }
       );
     }
@@ -117,7 +117,7 @@ export async function POST(req: Request) {
 
     if (upErr) {
       return NextResponse.json(
-        { ok: false, error: 'Update failed: ' + upErr.message },
+        { ok: false, error: 'Mise à jour impossible: ' + upErr.message },
         { status: 500 }
       );
     }

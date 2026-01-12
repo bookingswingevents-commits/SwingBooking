@@ -15,14 +15,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const proposal_id: string | undefined = body?.proposal_id;
     if (!proposal_id) {
-      return NextResponse.json({ ok: false, error: 'Missing proposal_id' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'proposal_id manquant' }, { status: 400 });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { ok: false, error: 'Missing Supabase env (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
+        { ok: false, error: 'Variables Supabase manquantes (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
         { status: 500 }
       );
     }
@@ -69,6 +69,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, request_id, proposal_id });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || 'Erreur serveur' }, { status: 500 });
   }
 }

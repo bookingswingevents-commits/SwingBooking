@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 const env = (name: string) => {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
   return v;
 };
 
@@ -33,7 +33,7 @@ export async function GET(_req: Request, context: any) {
     const params = await context.params;
     const id = params?.id;
     if (!id) {
-      return NextResponse.json({ ok: false, error: 'Missing request id' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'Identifiant de demande manquant' }, { status: 400 });
     }
 
     const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL');
@@ -163,6 +163,6 @@ export async function GET(_req: Request, context: any) {
       viewer_is_owner: viewerOwns,
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || 'Erreur serveur' }, { status: 500 });
   }
 }

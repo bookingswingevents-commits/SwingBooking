@@ -112,7 +112,7 @@ export async function GET() {
   } catch (e: any) {
     console.error('[artist/calendar] UNHANDLED', { error: e, ...debugContext });
     return NextResponse.json(
-      { ok: false, error: e?.message ?? 'Server error', code: 'UNHANDLED', details: e?.stack },
+      { ok: false, error: e?.message ?? 'Erreur serveur', code: 'UNHANDLED', details: e?.stack },
       { status: 500 }
     );
   }

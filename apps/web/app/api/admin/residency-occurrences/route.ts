@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 function env(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
   return v;
 }
 
@@ -43,7 +43,7 @@ export async function DELETE(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message ?? 'Erreur serveur' }, { status: 500 });
   }
 }
 
@@ -83,11 +83,11 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (error || !data?.id) {
-      return NextResponse.json({ ok: false, error: error?.message ?? 'Insert failed' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: error?.message ?? 'Insertion impossible' }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true, id: data.id });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message ?? 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message ?? 'Erreur serveur' }, { status: 500 });
   }
 }

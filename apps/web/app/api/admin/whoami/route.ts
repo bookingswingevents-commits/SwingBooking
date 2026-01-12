@@ -37,6 +37,6 @@ export async function GET() {
       is_admin: isAdmin,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'Server error' }, { status: 500 });
+    return NextResponse.json({ error: e?.message ?? 'Erreur serveur' }, { status: 500 });
   }
 }

@@ -11,7 +11,7 @@ export async function GET(req: Request) {
 
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { ok: false, error: 'Missing Supabase env (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
+        { ok: false, error: 'Variables Supabase manquantes (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
         { status: 500 }
       );
     }
@@ -42,7 +42,7 @@ export async function GET(req: Request) {
     }
 
     if (!requestId) {
-      return NextResponse.json({ ok: false, error: 'Missing request_id or proposal_id' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'request_id manquant or proposal_id' }, { status: 400 });
     }
 
     const res1 = await rest(
@@ -87,7 +87,7 @@ export async function GET(req: Request) {
       { status: 200 }
     );
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || 'Erreur serveur' }, { status: 500 });
   }
 }
 

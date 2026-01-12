@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR, statusFR } from '@/lib/date';
@@ -130,6 +130,8 @@ const UUID36 = /^[0-9a-fA-F-]{36}$/;
 export default function AdminRequestDetail() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectArtistId = searchParams.get('artist_id') ?? '';
 
   const [loading, setLoading] = useState(true);
   const [req, setReq] = useState<Request | null>(null);
@@ -157,6 +159,13 @@ export default function AdminRequestDetail() {
 
   const [proposalSentFlag, setProposalSentFlag] = useState(false);
   const [sendingRunSheets, setSendingRunSheets] = useState(false);
+
+  useEffect(() => {
+    if (!preselectArtistId || artists.length === 0) return;
+    setSelectedArtistIds((prev) =>
+      prev.includes(preselectArtistId) ? prev : [...prev, preselectArtistId]
+    );
+  }, [artists, preselectArtistId]);
 
   // timeline
   const steps = useMemo(

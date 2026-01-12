@@ -8,6 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
+import { labelForStatus, labelForError } from '@/lib/i18n';
 
 type ResidencyRow = {
   id: string;
@@ -745,7 +746,7 @@ export default function AdminResidencyDetailPage({
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Agenda programmation</h1>
-        <p className="text-red-600">{error}</p>
+        <p className="text-red-600">{labelForError(error)}</p>
         <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -1185,14 +1186,12 @@ export default function AdminResidencyDetailPage({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <div className="font-medium">{fmtDateFR(occ.date)}</div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
-                          {status === 'CONFIRMED'
-                            ? 'Confirmé'
-                            : status === 'PENDING'
-                            ? 'En attente'
-                            : status === 'DECLINED'
+                <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                          {status === 'DECLINED'
                             ? 'Tous refusés'
-                            : 'Aucun artiste'}
+                            : status === 'EMPTY'
+                            ? 'Aucun artiste'
+                            : labelForStatus(status)}
                         </span>
                       </div>
                       {summary && status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
@@ -1248,8 +1247,8 @@ export default function AdminResidencyDetailPage({
             const bookings = toArray(w.week_bookings) as WeekBooking[];
             const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
             const pendingCount = applications.filter((a) => a.status === 'APPLIED').length;
-            const statusLabel =
-              w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'OPEN';
+            const statusCode =
+              w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'EMPTY';
             const summary = weekSummary(w);
             const badgeClass =
               summary.status === 'CONFIRMED'
@@ -1272,15 +1271,15 @@ export default function AdminResidencyDetailPage({
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">{statusLabel}</span>
+                    <span className="text-xs uppercase tracking-wide text-slate-500">
+                      {labelForStatus(statusCode)}
+                    </span>
                     <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
-                      {summary.status === 'CONFIRMED'
-                        ? 'Confirmé'
-                        : summary.status === 'PENDING'
-                        ? 'En attente'
-                        : summary.status === 'DECLINED'
+                      {summary.status === 'DECLINED'
                         ? 'Tous refusés'
-                        : 'Aucun artiste'}
+                        : summary.status === 'EMPTY'
+                        ? 'Aucun artiste'
+                        : labelForStatus(summary.status)}
                     </span>
                     <select
                       className="border rounded-lg px-2 py-1 text-sm"

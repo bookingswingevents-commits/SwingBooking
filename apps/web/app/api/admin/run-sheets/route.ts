@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 // Utilitaire env
 function requiredEnv(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
   return v;
 }
 
@@ -118,6 +118,6 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
+    return NextResponse.json({ error: e?.message ?? "Erreur serveur" }, { status: 500 });
   }
 }

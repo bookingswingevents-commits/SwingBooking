@@ -1,7 +1,7 @@
 // apps/web/lib/residencyWeeksUtils.ts
 export function parseDateUTC(value: string): Date {
   const d = new Date(`${value}T00:00:00Z`);
-  if (isNaN(d.getTime())) throw new Error(`Invalid date: ${value}`);
+  if (isNaN(d.getTime())) throw new Error(`Date invalide: ${value}`);
   return d;
 }
 

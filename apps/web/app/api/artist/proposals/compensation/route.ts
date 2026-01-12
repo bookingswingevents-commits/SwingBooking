@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 function env(name: string) {
   const v = process.env[name];
-  if (!v) throw new Error(`Missing env: ${name}`);
+  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
   return v;
 }
 

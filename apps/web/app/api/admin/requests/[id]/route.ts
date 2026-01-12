@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, context: any) {
 
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
-        { ok: false, error: 'Missing Supabase env (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
+        { ok: false, error: 'Variables Supabase manquantes (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY)' },
         { status: 500 }
       );
     }
@@ -99,6 +99,6 @@ export async function GET(_req: NextRequest, context: any) {
       },
     });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || 'Erreur serveur' }, { status: 500 });
   }
 }

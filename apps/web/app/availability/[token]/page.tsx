@@ -3,6 +3,7 @@
 import { use, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { fmtDateFR } from '@/lib/date';
+import { labelForStatus } from '@/lib/i18n';
 
 type InvitationRow = {
   id: string;
@@ -239,12 +240,12 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
                   </div>
                 </div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">
-                  {isConfirmed ? 'CONFIRMED' : 'OPEN'}
+                  {labelForStatus(w.status)}
                 </div>
               </div>
 
               {isConfirmed ? (
-                <div className="text-sm text-slate-500">Semaine confirmee par l'admin.</div>
+                <div className="text-sm text-slate-500">Semaine confirmée par l’admin.</div>
               ) : isApplied ? (
                 <div className="text-sm text-emerald-700">Vous etes candidat.</div>
               ) : isRejected ? (

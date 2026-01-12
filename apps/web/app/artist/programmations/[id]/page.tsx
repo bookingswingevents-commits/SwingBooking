@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
+import { labelForStatus } from '@/lib/i18n';
 import { getArtistIdentity } from '@/lib/artistIdentity';
 
 type ResidencyRow = {
@@ -243,7 +244,11 @@ export default function ArtistProgrammationDetailPage({
                   </div>
                 </div>
                 <div className="text-xs uppercase tracking-wide text-slate-500">
-                  {isConfirmed ? (isMyConfirmed ? '✅ Confirmé' : 'Confirmé') : 'OPEN'}
+                  {isConfirmed
+                    ? isMyConfirmed
+                      ? '✅ Confirmé'
+                      : labelForStatus(w.status)
+                    : labelForStatus(w.status)}
                 </div>
               </div>
 

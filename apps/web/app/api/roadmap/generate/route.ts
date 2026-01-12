@@ -5,13 +5,13 @@ export async function POST(req: Request) {
     const { searchParams } = new URL(req.url);
     const request_id = searchParams.get('request_id');
     if (!request_id) {
-      return NextResponse.json({ ok: false, error: 'Missing request_id' }, { status: 400 });
+      return NextResponse.json({ ok: false, error: 'request_id manquant' }, { status: 400 });
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!supabaseUrl || !serviceKey) {
-      return NextResponse.json({ ok: false, error: 'Missing Supabase env' }, { status: 500 });
+      return NextResponse.json({ ok: false, error: 'Variables Supabase manquantes' }, { status: 500 });
     }
     const rest = async (path: string, init?: RequestInit) => {
       const res = await fetch(`${supabaseUrl}/rest/v1${path}`, {
@@ -76,6 +76,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e?.message || 'Server error' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: e?.message || 'Erreur serveur' }, { status: 500 });
   }
 }

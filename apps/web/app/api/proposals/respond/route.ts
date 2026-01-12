@@ -34,7 +34,7 @@ export async function POST(req: Request) {
 
     if (!request_id) {
       return NextResponse.json(
-        { ok: false, error: 'Missing request_id' },
+        { ok: false, error: 'request_id manquant' },
         { status: 400 }
       );
     }
@@ -203,7 +203,7 @@ export async function POST(req: Request) {
 
       if (upPropErr) {
         return NextResponse.json(
-          { ok: false, error: 'Update proposal failed: ' + upPropErr.message },
+          { ok: false, error: 'Mise à jour de la proposition impossible : ' + upPropErr.message },
           { status: 500 }
         );
       }
@@ -222,7 +222,7 @@ export async function POST(req: Request) {
 
       if (upReqErr) {
         return NextResponse.json(
-          { ok: false, error: 'Update booking_request failed: ' + upReqErr.message },
+          { ok: false, error: 'Mise à jour de la demande impossible : ' + upReqErr.message },
           { status: 500 }
         );
       }
