@@ -12,6 +12,7 @@ import { getArtistIdentity } from '@/lib/artistIdentity';
 type ResidencyRow = {
   id: string;
   name: string;
+  mode?: 'RANGE' | 'DATES' | null;
   start_date: string;
   end_date: string;
   terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | 'RESIDENCY_WEEKLY' | null;
@@ -49,6 +50,11 @@ type WeekBooking = {
   status: 'CONFIRMED' | 'CANCELLED';
 };
 
+type ResidencyOccurrence = {
+  id: string;
+  date: string;
+};
+
 const formatMoney = (cents: number, currency = 'EUR') =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(cents / 100);
 
@@ -63,6 +69,7 @@ export default function ArtistProgrammationDetailPage({
   const router = useRouter();
   const [residency, setResidency] = useState<ResidencyRow | null>(null);
   const [weeks, setWeeks] = useState<ResidencyWeek[]>([]);
+  const [occurrences, setOccurrences] = useState<ResidencyOccurrence[]>([]);
   const [applications, setApplications] = useState<WeekApplication[]>([]);
   const [artistId, setArtistId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,11 +100,11 @@ export default function ArtistProgrammationDetailPage({
         }
         setArtistId(identity.artistId);
 
-        const [resRes, weeksRes, appsRes] = await Promise.all([
+        const [resRes, weeksRes, appsRes, occRes] = await Promise.all([
           supabase
             .from('residencies')
             .select(
-              'id, name, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, clients(name)'
+              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, clients(name)'
             )
             .eq('id', residencyId)
             .maybeSingle(),
@@ -110,15 +117,22 @@ export default function ArtistProgrammationDetailPage({
             .from('week_applications')
             .select('id, residency_week_id, status')
             .eq('artist_id', identity.artistId),
+          supabase
+            .from('residency_occurrences')
+            .select('id, date')
+            .eq('residency_id', residencyId)
+            .order('date', { ascending: true }),
         ]);
 
         if (resRes.error || !resRes.data) throw resRes.error || new Error('Programmation introuvable.');
         if (weeksRes.error) throw weeksRes.error;
         if (appsRes.error) throw appsRes.error;
+        if (occRes.error) throw occRes.error;
 
         setResidency(resRes.data as ResidencyRow);
         setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
         setApplications((appsRes.data as WeekApplication[]) ?? []);
+        setOccurrences((occRes.data as ResidencyOccurrence[]) ?? []);
       } catch (e: any) {
         setError(e?.message ?? 'Erreur de chargement');
       } finally {
@@ -232,72 +246,98 @@ export default function ArtistProgrammationDetailPage({
         )}
       </section>
 
-      <section className="space-y-3">
-        {weeks.map((w) => {
-          const app = appByWeek.get(w.id);
-          const isConfirmed = w.status === 'CONFIRMED';
-          const bookings = toArray(w.week_bookings) as WeekBooking[];
-          const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
-          const isMyConfirmed =
-            isConfirmed && confirmedBooking?.artist_id && confirmedBooking.artist_id === artistId;
-          const isApplied = app?.status === 'APPLIED';
-          const isWithdrawn = app?.status === 'WITHDRAWN';
-          const isRejected = app?.status === 'REJECTED';
-          const disabled = isConfirmed || busyWeekId === w.id || !residency.is_open;
-          return (
-            <div
-              key={w.id}
-              className={`rounded-xl border p-4 flex flex-col gap-2 ${isConfirmed ? 'opacity-60' : ''}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-semibold">
-                    {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
+      {residency.mode === 'DATES' ? (
+        <section className="space-y-3">
+          <h2 className="font-semibold">Dates</h2>
+          {occurrences.length === 0 ? (
+            <div className="text-sm text-slate-500">Aucune date disponible.</div>
+          ) : (
+            occurrences.map((occ) => {
+              const status = residency.is_open ? 'À confirmer' : 'Sur invitation uniquement';
+              const badgeClass = residency.is_open
+                ? 'bg-amber-100 text-amber-700'
+                : 'bg-slate-100 text-slate-600';
+              return (
+                <div key={occ.id} className="rounded-xl border p-4 flex items-center justify-between">
+                  <div className="font-semibold">{fmtDateFR(occ.date)}</div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>{status}</span>
+                </div>
+              );
+            })
+          )}
+          {!residency.is_open ? (
+            <div className="text-sm text-slate-500">Sur invitation uniquement.</div>
+          ) : null}
+        </section>
+      ) : (
+        <section className="space-y-3">
+          <h2 className="font-semibold">Semaines</h2>
+          {weeks.map((w) => {
+            const app = appByWeek.get(w.id);
+            const isConfirmed = w.status === 'CONFIRMED';
+            const bookings = toArray(w.week_bookings) as WeekBooking[];
+            const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
+            const isMyConfirmed =
+              isConfirmed && confirmedBooking?.artist_id && confirmedBooking.artist_id === artistId;
+            const isApplied = app?.status === 'APPLIED';
+            const isWithdrawn = app?.status === 'WITHDRAWN';
+            const isRejected = app?.status === 'REJECTED';
+            const disabled = isConfirmed || busyWeekId === w.id || !residency.is_open;
+            return (
+              <div
+                key={w.id}
+                className={`rounded-xl border p-4 flex flex-col gap-2 ${isConfirmed ? 'opacity-60' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">
+                      {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
+                    </div>
+                    <div className="text-sm text-slate-500">
+                      {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
+                      {w.performances_count} prestations • {formatMoney(w.fee_cents)}
+                    </div>
                   </div>
+                  <div className="text-xs uppercase tracking-wide text-slate-500">
+                    {isConfirmed
+                      ? isMyConfirmed
+                        ? '✅ Confirmé'
+                        : labelForStatus(w.status)
+                      : labelForStatus(w.status)}
+                  </div>
+                </div>
+
+                {isConfirmed ? (
                   <div className="text-sm text-slate-500">
-                    {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
-                    {w.performances_count} prestations • {formatMoney(w.fee_cents)}
+                    {isMyConfirmed
+                      ? 'Vous etes confirme sur cette semaine.'
+                      : "Semaine confirmee par l'admin."}
                   </div>
-                </div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">
-                  {isConfirmed
-                    ? isMyConfirmed
-                      ? '✅ Confirmé'
-                      : labelForStatus(w.status)
-                    : labelForStatus(w.status)}
+                ) : isApplied ? (
+                  <div className="text-sm text-emerald-700">Vous etes candidat.</div>
+                ) : isRejected ? (
+                  <div className="text-sm text-slate-500">Candidature refusee.</div>
+                ) : isWithdrawn ? (
+                  <div className="text-sm text-slate-500">Candidature retiree.</div>
+                ) : null}
+
+                <div className="flex gap-2">
+                  {!isConfirmed && !isApplied ? (
+                    <button className="btn btn-primary" disabled={disabled} onClick={() => apply(w)}>
+                      Je suis disponible
+                    </button>
+                  ) : null}
+                  {!isConfirmed && isApplied ? (
+                    <button className="btn" disabled={disabled} onClick={() => withdraw(w)}>
+                      Retirer
+                    </button>
+                  ) : null}
                 </div>
               </div>
-
-              {isConfirmed ? (
-                <div className="text-sm text-slate-500">
-                  {isMyConfirmed
-                    ? 'Vous etes confirme sur cette semaine.'
-                    : "Semaine confirmee par l'admin."}
-                </div>
-              ) : isApplied ? (
-                <div className="text-sm text-emerald-700">Vous etes candidat.</div>
-              ) : isRejected ? (
-                <div className="text-sm text-slate-500">Candidature refusee.</div>
-              ) : isWithdrawn ? (
-                <div className="text-sm text-slate-500">Candidature retiree.</div>
-              ) : null}
-
-              <div className="flex gap-2">
-                {!isConfirmed && !isApplied ? (
-                  <button className="btn btn-primary" disabled={disabled} onClick={() => apply(w)}>
-                    Je suis disponible
-                  </button>
-                ) : null}
-                {!isConfirmed && isApplied ? (
-                  <button className="btn" disabled={disabled} onClick={() => withdraw(w)}>
-                    Retirer
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          );
-        })}
-      </section>
+            );
+          })}
+        </section>
+      )}
     </div>
   );
 }
