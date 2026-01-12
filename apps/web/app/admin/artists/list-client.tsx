@@ -27,6 +27,7 @@ export default function AdminArtistsList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [formatId, setFormatId] = useState('');
+  const [requestArtist, setRequestArtist] = useState<ArtistRow | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -167,11 +168,43 @@ export default function AdminArtistsList() {
                     ))}
                   </div>
                 )}
+
+                <div className="mt-3">
+                  <button
+                    className="btn"
+                    onClick={() => setRequestArtist(item)}
+                  >
+                    Envoyer une demande
+                  </button>
+                </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {requestArtist ? (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-5 w-full max-w-md space-y-4">
+            <h3 className="text-lg font-semibold">Envoyer une demande</h3>
+            <div className="text-sm text-slate-600">
+              {requestArtist.stage_name || requestArtist.full_name || 'Artiste'} •{' '}
+              {requestArtist.email || '—'}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button className="btn" onClick={() => setRequestArtist(null)}>
+                Annuler
+              </button>
+              <Link
+                href={`/admin/requests/new?artist_id=${encodeURIComponent(requestArtist.id)}`}
+                className="btn btn-primary"
+              >
+                Ouvrir le formulaire
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

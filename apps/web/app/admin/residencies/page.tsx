@@ -16,8 +16,18 @@ type ResidencyRow = {
   end_date: string;
   client_id: string;
   mode?: 'RANGE' | 'DATES' | null;
+  event_address_line1?: string | null;
+  event_address_line2?: string | null;
+  event_address_zip?: string | null;
+  event_address_city?: string | null;
+  event_address_country?: string | null;
   clients?: { name: string } | { name: string }[] | null;
   residency_occurrences?: { count: number }[] | { count: number } | null;
+  clients_default_event_address_line1?: string | null;
+  clients_default_event_address_line2?: string | null;
+  clients_default_event_zip?: string | null;
+  clients_default_event_city?: string | null;
+  clients_default_event_country?: string | null;
 };
 
 export default function AdminResidenciesPage() {
@@ -65,7 +75,9 @@ export default function AdminResidenciesPage() {
         supabase.from('clients').select('id, name').order('name', { ascending: true }),
         supabase
           .from('residencies')
-          .select('id, name, start_date, end_date, client_id, mode, clients(name), residency_occurrences(count)')
+          .select(
+            'id, name, start_date, end_date, client_id, mode, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country), residency_occurrences(count)'
+          )
           .order('start_date', { ascending: false }),
       ]);
 
@@ -190,6 +202,28 @@ export default function AdminResidenciesPage() {
       </div>
     );
   }
+
+  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+  const buildAddress = (r: ResidencyRow) => {
+    const client = Array.isArray(r.clients) ? r.clients[0] : (r.clients as any);
+    const parts = [
+      r.event_address_line1,
+      r.event_address_line2,
+      r.event_address_zip,
+      r.event_address_city,
+      r.event_address_country,
+    ].filter(Boolean);
+    if (parts.length) return parts.join(', ');
+    const fallback = [
+      client?.default_event_address_line1,
+      client?.default_event_address_line2,
+      client?.default_event_zip,
+      client?.default_event_city,
+      client?.default_event_country,
+    ].filter(Boolean);
+    return fallback.join(', ');
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -361,17 +395,50 @@ export default function AdminResidenciesPage() {
                 ? '• Dates multiples'
                 : `• ${occCount} dates (du ${fmtDateFR(r.start_date)} au ${fmtDateFR(r.end_date)})`
               : `• ${fmtDateFR(r.start_date)} → ${fmtDateFR(r.end_date)}`;
+          const address = buildAddress(r);
+          const mapLink = address
+            ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+            : null;
+          const staticMapUrl =
+            mapsKey && address
+              ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(address)}&zoom=13&size=360x200&maptype=roadmap&markers=color:red%7C${encodeURIComponent(address)}&key=${mapsKey}`
+              : null;
           return (
-            <div key={r.id} className="rounded-xl border p-4 flex items-center justify-between gap-4">
+            <div key={r.id} className="rounded-xl border p-4 grid md:grid-cols-[1fr_200px] gap-4 bg-white">
               <div>
                 <div className="font-semibold">{r.name}</div>
                 <div className="text-sm text-slate-500">
                   {clientName || 'Client'} {modeLabel}
                 </div>
+                <div className="text-sm text-slate-600 mt-1">
+                  {address || 'Adresse non renseignée'}
+                </div>
+                {mapLink ? (
+                  <a
+                    href={mapLink}
+                    target="_blank"
+                    className="text-xs underline text-[var(--brand)]"
+                  >
+                    Voir sur Google Maps
+                  </a>
+                ) : null}
               </div>
-              <Link href={`/admin/programmations/${r.id}`} className="btn btn-primary">
-                Ouvrir l'agenda
-              </Link>
+              <div className="flex flex-col gap-2">
+                {staticMapUrl ? (
+                  <img
+                    src={staticMapUrl}
+                    alt="Carte"
+                    className="rounded-lg border object-cover w-full h-[120px]"
+                  />
+                ) : (
+                  <div className="rounded-lg border bg-slate-50 text-xs text-slate-500 flex items-center justify-center h-[120px]">
+                    Carte indisponible
+                  </div>
+                )}
+                <Link href={`/admin/programmations/${r.id}`} className="btn btn-primary">
+                  Ouvrir l'agenda
+                </Link>
+              </div>
             </div>
           );
         })}

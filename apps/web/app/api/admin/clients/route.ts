@@ -28,7 +28,9 @@ export async function GET() {
 
     const { data, error } = await supaSrv
       .from('clients')
-      .select('id, name')
+      .select(
+        'id, name, contact_email, default_event_city, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_country, notes'
+      )
       .order('name', { ascending: true });
 
     if (error) {
@@ -58,13 +60,31 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'INVALID_NAME' }, { status: 400 });
     }
 
+    const payload = {
+      name: rawName,
+      contact_name: body?.contact_name ? String(body.contact_name).trim() : null,
+      contact_email: body?.contact_email ? String(body.contact_email).trim() : null,
+      contact_phone: body?.contact_phone ? String(body.contact_phone).trim() : null,
+      billing_address_line1: body?.billing_address_line1 ? String(body.billing_address_line1).trim() : null,
+      billing_address_line2: body?.billing_address_line2 ? String(body.billing_address_line2).trim() : null,
+      billing_zip: body?.billing_zip ? String(body.billing_zip).trim() : null,
+      billing_city: body?.billing_city ? String(body.billing_city).trim() : null,
+      billing_country: body?.billing_country ? String(body.billing_country).trim() : null,
+      default_event_address_line1: body?.default_event_address_line1 ? String(body.default_event_address_line1).trim() : null,
+      default_event_address_line2: body?.default_event_address_line2 ? String(body.default_event_address_line2).trim() : null,
+      default_event_zip: body?.default_event_zip ? String(body.default_event_zip).trim() : null,
+      default_event_city: body?.default_event_city ? String(body.default_event_city).trim() : null,
+      default_event_country: body?.default_event_country ? String(body.default_event_country).trim() : null,
+      notes: body?.notes ? String(body.notes).trim() : null,
+    };
+
     const supaSrv = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
     const { data, error } = await supaSrv
       .from('clients')
-      .insert({ name: rawName })
+      .insert(payload)
       .select('id, name')
       .maybeSingle();
 
