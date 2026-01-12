@@ -1,0 +1,78 @@
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+function env(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env: ${name}`);
+  return v;
+}
+
+export async function PATCH(req: Request, context: any) {
+  try {
+    const params = await context.params;
+    const id = params?.id as string | undefined;
+    if (!id) {
+      return NextResponse.json({ ok: false, error: 'MISSING_ID' }, { status: 400 });
+    }
+
+    const supabase = await createSupabaseServerClient();
+    const { user, isAdmin } = await getAdminAuth(supabase);
+    if (!user) {
+      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 401 });
+    }
+    if (!isAdmin) {
+      return NextResponse.json({ ok: false, error: 'NOT_ADMIN' }, { status: 403 });
+    }
+
+    const body = await req.json();
+    const rawName = body?.name ? String(body.name).trim() : null;
+    if (rawName !== null && rawName.length < 2) {
+      return NextResponse.json({ ok: false, error: 'INVALID_NAME' }, { status: 400 });
+    }
+    const email = body?.contact_email ? String(body.contact_email).trim() : null;
+    if (email && !email.includes('@')) {
+      return NextResponse.json({ ok: false, error: 'INVALID_EMAIL' }, { status: 400 });
+    }
+
+    const payload = {
+      ...(rawName !== null ? { name: rawName } : {}),
+      contact_name: body?.contact_name ? String(body.contact_name).trim() : null,
+      contact_email: email,
+      contact_phone: body?.contact_phone ? String(body.contact_phone).trim() : null,
+      billing_address_line1: body?.billing_address_line1 ? String(body.billing_address_line1).trim() : null,
+      billing_address_line2: body?.billing_address_line2 ? String(body.billing_address_line2).trim() : null,
+      billing_zip: body?.billing_zip ? String(body.billing_zip).trim() : null,
+      billing_city: body?.billing_city ? String(body.billing_city).trim() : null,
+      billing_country: body?.billing_country ? String(body.billing_country).trim() : null,
+      default_event_address_line1: body?.default_event_address_line1 ? String(body.default_event_address_line1).trim() : null,
+      default_event_address_line2: body?.default_event_address_line2 ? String(body.default_event_address_line2).trim() : null,
+      default_event_zip: body?.default_event_zip ? String(body.default_event_zip).trim() : null,
+      default_event_city: body?.default_event_city ? String(body.default_event_city).trim() : null,
+      default_event_country: body?.default_event_country ? String(body.default_event_country).trim() : null,
+      notes: body?.notes ? String(body.notes).trim() : null,
+    };
+
+    const supaSrv = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data, error } = await supaSrv
+      .from('clients')
+      .update(payload)
+      .eq('id', id)
+      .select('id, name')
+      .maybeSingle();
+
+    if (error || !data) {
+      return NextResponse.json({ ok: false, error: error?.message ?? 'Update failed' }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, client: data });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? 'Server error' }, { status: 500 });
+  }
+}
