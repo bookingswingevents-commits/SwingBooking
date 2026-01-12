@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { getArtistIdentity } from '@/lib/artistIdentity';
 import { isUuid } from '@/lib/uuid';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function env(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Variables d'environnement manquantes: ${name}`);
-  return v;
-}
 
 export async function POST(req: Request) {
   try {
@@ -70,48 +63,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const supaSrv = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    let weekId: string | null = null;
-    const { data: existingWeek } = await supaSrv
+    const { data: existingWeek, error: weekErr } = await supabase
       .from('residency_weeks')
       .select('id')
       .eq('residency_id', residency_id)
       .eq('start_date_sun', date)
       .maybeSingle();
 
-    if (existingWeek?.id) {
-      weekId = existingWeek.id;
-    } else {
-      const { data: insertedWeek, error: insWeekErr } = await supaSrv
-        .from('residency_weeks')
-        .insert({
-          residency_id,
-          start_date_sun: date,
-          end_date_sun: date,
-          type: 'CALM',
-          performances_count: 1,
-          fee_cents: typeof resRow.fee_amount_cents === 'number' ? resRow.fee_amount_cents : 0,
-          status: 'OPEN',
-        })
-        .select('id')
-        .maybeSingle();
-      if (insWeekErr || !insertedWeek?.id) {
-        return NextResponse.json(
-          { ok: false, error: insWeekErr?.message ?? 'Création impossible.' },
-          { status: 500 }
-        );
-      }
-      weekId = insertedWeek.id;
+    if (weekErr) {
+      return NextResponse.json(
+        { ok: false, error: 'Impossible de vérifier la date.' },
+        { status: 500 }
+      );
     }
 
-    const { error: upErr } = await supaSrv
+    if (!existingWeek?.id) {
+      return NextResponse.json(
+        { ok: false, error: 'Date indisponible pour cette programmation.' },
+        { status: 400 }
+      );
+    }
+
+    const { error: upErr } = await supabase
       .from('week_applications')
       .upsert(
         {
-          residency_week_id: weekId,
+          residency_week_id: existingWeek.id,
           artist_id: identity.artistId,
           status: 'APPLIED',
         },
@@ -119,12 +96,12 @@ export async function POST(req: Request) {
       );
     if (upErr) {
       return NextResponse.json(
-        { ok: false, error: upErr.message },
+        { ok: false, error: upErr.message ?? 'Envoi impossible.' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ ok: true, residency_week_id: weekId });
+    return NextResponse.json({ ok: true, residency_week_id: existingWeek.id });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message ?? 'Erreur serveur' },
