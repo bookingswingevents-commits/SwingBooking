@@ -24,7 +24,29 @@ type ResidencyRow = {
   companion_included: boolean;
   is_public: boolean;
   is_open: boolean;
-  clients?: { name: string } | { name: string }[] | null;
+  event_address_line1?: string | null;
+  event_address_line2?: string | null;
+  event_address_zip?: string | null;
+  event_address_city?: string | null;
+  event_address_country?: string | null;
+  clients?:
+    | {
+        name: string;
+        default_event_address_line1?: string | null;
+        default_event_address_line2?: string | null;
+        default_event_address_zip?: string | null;
+        default_event_address_city?: string | null;
+        default_event_address_country?: string | null;
+      }
+    | {
+        name: string;
+        default_event_address_line1?: string | null;
+        default_event_address_line2?: string | null;
+        default_event_address_zip?: string | null;
+        default_event_address_city?: string | null;
+        default_event_address_country?: string | null;
+      }[]
+    | null;
 };
 
 type ResidencyWeek = {
@@ -59,6 +81,22 @@ const formatMoney = (cents: number, currency = 'EUR') =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(cents / 100);
 
 const toArray = <T,>(v: T[] | T | null | undefined): T[] => (Array.isArray(v) ? v : v ? [v] : []);
+
+function buildAddress(
+  line1?: string | null,
+  line2?: string | null,
+  zip?: string | null,
+  city?: string | null,
+  country?: string | null
+) {
+  const parts = [
+    line1?.trim(),
+    line2?.trim(),
+    [zip?.trim(), city?.trim()].filter(Boolean).join(' '),
+    country?.trim(),
+  ].filter(Boolean);
+  return parts.join(', ');
+}
 
 export default function ArtistProgrammationDetailPage({
   params,
@@ -100,11 +138,11 @@ export default function ArtistProgrammationDetailPage({
         }
         setArtistId(identity.artistId);
 
-        const [resRes, weeksRes, appsRes, occRes] = await Promise.all([
+        const [resRes, weeksRes, appsRes] = await Promise.all([
           supabase
             .from('residencies')
             .select(
-              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, clients(name)'
+              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_address_zip, default_event_address_city, default_event_address_country)'
             )
             .eq('id', residencyId)
             .maybeSingle(),
@@ -117,22 +155,26 @@ export default function ArtistProgrammationDetailPage({
             .from('week_applications')
             .select('id, residency_week_id, status')
             .eq('artist_id', identity.artistId),
-          supabase
-            .from('residency_occurrences')
-            .select('id, date')
-            .eq('residency_id', residencyId)
-            .order('date', { ascending: true }),
         ]);
 
         if (resRes.error || !resRes.data) throw resRes.error || new Error('Programmation introuvable.');
         if (weeksRes.error) throw weeksRes.error;
         if (appsRes.error) throw appsRes.error;
-        if (occRes.error) throw occRes.error;
 
         setResidency(resRes.data as ResidencyRow);
         setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
         setApplications((appsRes.data as WeekApplication[]) ?? []);
-        setOccurrences((occRes.data as ResidencyOccurrence[]) ?? []);
+        if ((resRes.data as ResidencyRow).mode === 'DATES') {
+          const { data: occData, error: occErr } = await supabase
+            .from('residency_occurrences')
+            .select('id, date')
+            .eq('residency_id', residencyId)
+            .order('date', { ascending: true });
+          if (occErr) throw occErr;
+          setOccurrences((occData as ResidencyOccurrence[]) ?? []);
+        } else {
+          setOccurrences([]);
+        }
       } catch (e: any) {
         setError(e?.message ?? 'Erreur de chargement');
       } finally {
@@ -206,6 +248,28 @@ export default function ArtistProgrammationDetailPage({
   const clientName = Array.isArray(residency.clients)
     ? residency.clients[0]?.name
     : (residency.clients as any)?.name;
+  const clientAddress =
+    Array.isArray(residency.clients) && residency.clients.length > 0
+      ? residency.clients[0]
+      : (residency.clients as any);
+  const addressFromResidency = buildAddress(
+    residency.event_address_line1,
+    residency.event_address_line2,
+    residency.event_address_zip,
+    residency.event_address_city,
+    residency.event_address_country
+  );
+  const addressFromClient = buildAddress(
+    clientAddress?.default_event_address_line1,
+    clientAddress?.default_event_address_line2,
+    clientAddress?.default_event_address_zip,
+    clientAddress?.default_event_address_city,
+    clientAddress?.default_event_address_country
+  );
+  const resolvedAddress = addressFromResidency || addressFromClient;
+  const mapsUrl = resolvedAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
+    : null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -246,11 +310,37 @@ export default function ArtistProgrammationDetailPage({
         )}
       </section>
 
+      <section className="rounded-xl border p-4 space-y-3">
+        <h2 className="font-semibold">Lieu de la prestation</h2>
+        {resolvedAddress ? (
+          <>
+            <div className="text-sm text-slate-600">{resolvedAddress}</div>
+            <div className="flex flex-wrap gap-2">
+              {mapsUrl ? (
+                <a className="btn btn-primary" href={mapsUrl} target="_blank" rel="noreferrer">
+                  Ouvrir dans Google Maps
+                </a>
+              ) : null}
+              <button
+                className="btn"
+                onClick={() => navigator.clipboard.writeText(resolvedAddress)}
+              >
+                Copier l’adresse
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="text-sm text-slate-500">Adresse non renseignée.</div>
+        )}
+      </section>
+
       {residency.mode === 'DATES' ? (
         <section className="space-y-3">
           <h2 className="font-semibold">Dates</h2>
           {occurrences.length === 0 ? (
-            <div className="text-sm text-slate-500">Aucune date disponible.</div>
+            <div className="text-sm text-amber-700">
+              Les dates ne sont pas visibles pour votre compte. Contactez l’administrateur.
+            </div>
           ) : (
             occurrences.map((occ) => {
               const status = residency.is_open ? 'À confirmer' : 'Sur invitation uniquement';
