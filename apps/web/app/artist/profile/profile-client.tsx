@@ -11,6 +11,7 @@ type Artist = {
   formations: Formation[] | null;
   bio: string | null;
   tech_needs: string | null;
+  contact_email: string | null;
   contact_phone: string | null;
   instagram_url: string | null;
   youtube_url: string | null;
@@ -42,6 +43,7 @@ export default function ArtistProfilePage() {
   const [formations, setFormations] = useState<Formation[]>([]);
   const [bio, setBio] = useState('');
   const [techNeeds, setTechNeeds] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [instagramUrl, setInstagramUrl] = useState('');
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -81,12 +83,18 @@ export default function ArtistProfilePage() {
         const { data: artistData, error: artistErr } = await supabase
           .from('artists')
           .select(
-            'stage_name, formations, bio, tech_needs, contact_phone, instagram_url, youtube_url, facebook_url, tiktok_url, website_url, is_active'
+            'stage_name, formations, bio, tech_needs, contact_email, contact_phone, instagram_url, youtube_url, facebook_url, tiktok_url, website_url, is_active'
           )
           .eq('id', uid)
           .maybeSingle();
 
         if (artistErr) throw artistErr;
+
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('id', uid)
+          .maybeSingle();
 
         // Formats disponibles
         const { data: formatsData, error: formatsErr } = await supabase
@@ -116,6 +124,7 @@ export default function ArtistProfilePage() {
         setFormations((a?.formations ?? []) as Formation[]);
         setBio(a?.bio ?? '');
         setTechNeeds(a?.tech_needs ?? '');
+        setContactEmail(a?.contact_email ?? profileData?.email ?? session.user.email ?? '');
         setContactPhone(a?.contact_phone ?? '');
         setInstagramUrl(a?.instagram_url ?? '');
         setYoutubeUrl(a?.youtube_url ?? '');
@@ -150,6 +159,15 @@ export default function ArtistProfilePage() {
         normalizedWebsite = `https://${normalizedWebsite}`;
       }
       if (!normalizedWebsite) normalizedWebsite = '';
+      const normalizedContactEmail = contactEmail.trim();
+      if (normalizedContactEmail) {
+        const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedContactEmail);
+        if (!emailOk) {
+          setError('Email de contact invalide.');
+          setSaving(false);
+          return;
+        }
+      }
 
       // 1) Update table artists
       const { error: upErr } = await supabase
@@ -159,6 +177,7 @@ export default function ArtistProfilePage() {
           formations: formations.length ? formations : null,
           bio: bio || null,
           tech_needs: techNeeds || null,
+          contact_email: normalizedContactEmail || null,
           contact_phone: contactPhone || null,
           instagram_url: instagramUrl || null,
           youtube_url: youtubeUrl || null,
@@ -265,6 +284,17 @@ export default function ArtistProfilePage() {
                 value={stageName}
                 onChange={(e) => setStageName(e.target.value)}
                 placeholder="Ex : Duo Swing Paris"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Email de contact</label>
+              <input
+                className="w-full border rounded-xl p-3"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="ex: artiste@gmail.com"
               />
             </div>
 
