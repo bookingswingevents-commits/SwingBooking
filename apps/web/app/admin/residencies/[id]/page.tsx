@@ -15,7 +15,7 @@ type ResidencyRow = {
   start_date: string;
   end_date: string;
   mode?: 'RANGE' | 'DATES' | null;
-  terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | null;
+  terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | 'RESIDENCY_WEEKLY' | null;
   fee_amount_cents?: number | null;
   fee_currency?: string | null;
   fee_is_net?: boolean | null;
@@ -24,7 +24,29 @@ type ResidencyRow = {
   lodging_included: boolean;
   meals_included: boolean;
   companion_included: boolean;
-  clients?: { name: string } | { name: string }[] | null;
+  event_address_line1?: string | null;
+  event_address_line2?: string | null;
+  event_address_zip?: string | null;
+  event_address_city?: string | null;
+  event_address_country?: string | null;
+  clients?:
+    | {
+        name: string;
+        default_event_address_line1?: string | null;
+        default_event_address_line2?: string | null;
+        default_event_zip?: string | null;
+        default_event_city?: string | null;
+        default_event_country?: string | null;
+      }
+    | {
+        name: string;
+        default_event_address_line1?: string | null;
+        default_event_address_line2?: string | null;
+        default_event_zip?: string | null;
+        default_event_city?: string | null;
+        default_event_country?: string | null;
+      }[]
+    | null;
 };
 
 type WeekApplication = {
@@ -84,6 +106,29 @@ const formatMoney = (cents: number) =>
 
 const toArray = <T,>(v: T[] | T | null | undefined): T[] => (Array.isArray(v) ? v : v ? [v] : []);
 
+function buildAddress(
+  line1?: string | null,
+  line2?: string | null,
+  zip?: string | null,
+  city?: string | null,
+  country?: string | null
+) {
+  const parts = [
+    line1?.trim(),
+    line2?.trim(),
+    [zip?.trim(), city?.trim()].filter(Boolean).join(' '),
+    country?.trim(),
+  ].filter(Boolean);
+  return parts.join(', ');
+}
+
+function normalizeTermsMode(
+  mode?: ResidencyRow['terms_mode']
+): 'SIMPLE_FEE' | 'RESIDENCY_WEEKLY' {
+  if (mode === 'SIMPLE_FEE') return 'SIMPLE_FEE';
+  return 'RESIDENCY_WEEKLY';
+}
+
 export default function AdminResidencyDetailPage({
   params,
 }: {
@@ -107,12 +152,13 @@ export default function AdminResidencyDetailPage({
   const [editLodging, setEditLodging] = useState(true);
   const [editMeals, setEditMeals] = useState(true);
   const [editCompanion, setEditCompanion] = useState(true);
-  const [editTermsMode, setEditTermsMode] = useState<'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY'>('WEEKLY');
+  const [editTermsMode, setEditTermsMode] = useState<'SIMPLE_FEE' | 'RESIDENCY_WEEKLY'>('RESIDENCY_WEEKLY');
   const [editFeeAmount, setEditFeeAmount] = useState('');
   const [editFeeIsNet, setEditFeeIsNet] = useState(true);
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editIsOpen, setEditIsOpen] = useState(true);
   const [isEditingConditions, setIsEditingConditions] = useState(false);
+  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
   async function loadData() {
     if (!residencyId) {
@@ -142,7 +188,9 @@ export default function AdminResidencyDetailPage({
 
       const resRes = await supabase
         .from('residencies')
-        .select('id, name, start_date, end_date, mode, terms_mode, fee_amount_cents, fee_currency, fee_is_net, is_public, is_open, lodging_included, meals_included, companion_included, clients(name)')
+        .select(
+          'id, name, start_date, end_date, mode, terms_mode, fee_amount_cents, fee_currency, fee_is_net, is_public, is_open, lodging_included, meals_included, companion_included, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
+        )
         .eq('id', residencyId)
         .maybeSingle();
       if (resRes.error) throw resRes.error;
@@ -182,7 +230,7 @@ export default function AdminResidencyDetailPage({
       setEditLodging(!!resRow.lodging_included);
       setEditMeals(!!resRow.meals_included);
       setEditCompanion(!!resRow.companion_included);
-      setEditTermsMode((resRow.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY') ?? 'WEEKLY');
+      setEditTermsMode(normalizeTermsMode(resRow.terms_mode));
       setEditFeeAmount(
         typeof resRow.fee_amount_cents === 'number'
           ? String((resRow.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
@@ -345,7 +393,7 @@ export default function AdminResidencyDetailPage({
         payload.fee_amount_cents = Math.round(num * 100);
         payload.fee_currency = 'EUR';
         payload.fee_is_net = editFeeIsNet;
-      } else if (editTermsMode === 'INCLUDED') {
+      } else if (editTermsMode === 'RESIDENCY_WEEKLY') {
         payload.lodging_included = editLodging;
         payload.meals_included = editMeals;
         payload.companion_included = editCompanion;
@@ -373,7 +421,7 @@ export default function AdminResidencyDetailPage({
     setEditLodging(!!residency.lodging_included);
     setEditMeals(!!residency.meals_included);
     setEditCompanion(!!residency.companion_included);
-    setEditTermsMode((residency.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY') ?? 'WEEKLY');
+    setEditTermsMode(normalizeTermsMode(residency.terms_mode));
     setEditFeeAmount(
       typeof residency.fee_amount_cents === 'number'
         ? String((residency.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
@@ -467,6 +515,25 @@ export default function AdminResidencyDetailPage({
     ? residency.clients[0]?.name
     : (residency.clients as any)?.name;
   const occurrenceCount = occurrences.length;
+  const clientRow = Array.isArray(residency.clients)
+    ? residency.clients[0]
+    : (residency.clients as any);
+  const resolvedLine2 = residency.event_address_line2 ?? clientRow?.default_event_address_line2 ?? null;
+  const resolvedAddress = buildAddress(
+    residency.event_address_line1 ?? clientRow?.default_event_address_line1 ?? null,
+    resolvedLine2,
+    residency.event_address_zip ?? clientRow?.default_event_zip ?? null,
+    residency.event_address_city ?? clientRow?.default_event_city ?? null,
+    residency.event_address_country ?? clientRow?.default_event_country ?? null
+  );
+  const mapLink = resolvedAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
+    : null;
+  const staticMapUrl =
+    mapsKey && resolvedAddress
+      ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(resolvedAddress)}&zoom=13&size=600x300&maptype=roadmap&markers=color:red%7C${encodeURIComponent(resolvedAddress)}&key=${mapsKey}`
+      : null;
+  const normalizedTermsMode = normalizeTermsMode(residency.terms_mode);
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -483,11 +550,64 @@ export default function AdminResidencyDetailPage({
         </div>
       </header>
 
-      <section className="rounded-xl border p-4 space-y-2">
-        <h2 className="font-semibold">Conditions hebergement / repas</h2>
+      <section className="rounded-xl border p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Lieu de la prestation</h2>
+            {resolvedAddress ? (
+              <div className="text-sm text-slate-600 mt-1">
+                <div>{resolvedAddress}</div>
+                {resolvedLine2 ? (
+                  <div className="text-xs text-slate-500">{resolvedLine2}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-500 mt-1">Adresse non renseignée.</div>
+            )}
+          </div>
+          {mapLink ? (
+            <a
+              href={mapLink}
+              target="_blank"
+              className="btn btn-primary"
+              rel="noreferrer"
+            >
+              Voir sur Google Maps
+            </a>
+          ) : null}
+        </div>
+        {resolvedAddress ? (
+          staticMapUrl ? (
+            <img
+              src={staticMapUrl}
+              alt="Aperçu carte"
+              loading="lazy"
+              className="rounded-xl border h-48 w-full object-cover"
+            />
+          ) : (
+            <div className="rounded-xl border bg-slate-50 text-sm text-slate-500 flex items-center justify-center h-48">
+              Aperçu carte indisponible (clé Google Maps manquante)
+            </div>
+          )
+        ) : null}
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Conditions</h2>
+          {!isEditingConditions ? (
+            <button
+              className="btn"
+              onClick={() => setIsEditingConditions(true)}
+              disabled={actionLoading}
+            >
+              Modifier
+            </button>
+          ) : null}
+        </div>
         {!isEditingConditions ? (
           <>
-            {residency.terms_mode === 'SIMPLE_FEE' ? (
+            {normalizedTermsMode === 'SIMPLE_FEE' ? (
               <div className="text-sm text-slate-700">
                 Cachet unique :{' '}
                 <strong>
@@ -498,7 +618,7 @@ export default function AdminResidencyDetailPage({
                 {residency.fee_is_net === false ? '(brut)' : '(net)'}
               </div>
             ) : null}
-            {residency.terms_mode === 'INCLUDED' ? (
+            {normalizedTermsMode === 'RESIDENCY_WEEKLY' ? (
               <div className="flex flex-wrap gap-2 text-xs">
                 <span className="px-2 py-1 rounded-full border">
                   {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'}
@@ -511,7 +631,7 @@ export default function AdminResidencyDetailPage({
                 </span>
               </div>
             ) : null}
-            {residency.terms_mode === 'WEEKLY' ? (
+            {normalizedTermsMode === 'RESIDENCY_WEEKLY' ? (
               <div className="text-sm text-slate-600">
                 Semaine calme: 2 prestations • 1 cachet (150€ net)
                 <br />
@@ -526,11 +646,10 @@ export default function AdminResidencyDetailPage({
               <select
                 className="border rounded-lg px-2 py-1 text-sm"
                 value={editTermsMode}
-                onChange={(e) => setEditTermsMode(e.target.value as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY')}
+                onChange={(e) => setEditTermsMode(e.target.value as 'SIMPLE_FEE' | 'RESIDENCY_WEEKLY')}
               >
                 <option value="SIMPLE_FEE">Cachet unique</option>
-                <option value="INCLUDED">Hebergement / repas / accompagnant</option>
-                <option value="WEEKLY">Semaine calme / forte</option>
+                <option value="RESIDENCY_WEEKLY">Résidence (semaines calme/forte)</option>
               </select>
             </div>
             {editTermsMode === 'SIMPLE_FEE' ? (
@@ -551,7 +670,7 @@ export default function AdminResidencyDetailPage({
                 </label>
               </div>
             ) : null}
-            {editTermsMode === 'INCLUDED' ? (
+            {editTermsMode === 'RESIDENCY_WEEKLY' ? (
               <div className="flex flex-wrap gap-4 text-sm">
                 <label className="flex items-center gap-2">
                   <input
@@ -579,7 +698,7 @@ export default function AdminResidencyDetailPage({
                 </label>
               </div>
             ) : null}
-            {editTermsMode === 'WEEKLY' ? (
+            {editTermsMode === 'RESIDENCY_WEEKLY' ? (
               <div className="text-sm text-slate-600">
                 Semaine calme: 2 prestations • 1 cachet (150€ net)
                 <br />
@@ -593,26 +712,16 @@ export default function AdminResidencyDetailPage({
             {success}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-2">
-          {isEditingConditions ? (
-            <>
-              <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
-                Enregistrer
-              </button>
-              <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
-                Annuler
-              </button>
-            </>
-          ) : (
-            <button
-              className="btn"
-              onClick={() => setIsEditingConditions(true)}
-              disabled={actionLoading}
-            >
-              Modifier
+        {isEditingConditions ? (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
+              Enregistrer
             </button>
-          )}
-        </div>
+            <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
+              Annuler
+            </button>
+          </div>
+        ) : null}
       </section>
 
       <section className="rounded-xl border p-4 space-y-3">

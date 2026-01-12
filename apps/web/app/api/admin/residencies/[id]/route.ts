@@ -30,7 +30,7 @@ export async function PATCH(req: Request, context: any) {
     }
 
     const body = await req.json();
-    const terms_mode = body?.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | undefined;
+    const terms_mode = body?.terms_mode as 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | 'RESIDENCY_WEEKLY' | undefined;
     const lodging_included = body?.lodging_included;
     const meals_included = body?.meals_included;
     const companion_included = body?.companion_included;
@@ -38,7 +38,7 @@ export async function PATCH(req: Request, context: any) {
     const fee_currency = body?.fee_currency ? String(body.fee_currency) : undefined;
     const fee_is_net = body?.fee_is_net;
 
-    if (!terms_mode || !['SIMPLE_FEE', 'INCLUDED', 'WEEKLY'].includes(terms_mode)) {
+    if (!terms_mode || !['SIMPLE_FEE', 'INCLUDED', 'WEEKLY', 'RESIDENCY_WEEKLY'].includes(terms_mode)) {
       return NextResponse.json({ ok: false, error: 'INVALID_TERMS_MODE' }, { status: 400 });
     }
 
