@@ -475,7 +475,7 @@ function NewRequestInner() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-sm font-medium">Adresse (si différente)</label>
+                    <label className="text-sm font-medium">Adresse</label>
                     <input
                       className="w-full border rounded-xl p-3"
                       value={occ.address_snapshot}
