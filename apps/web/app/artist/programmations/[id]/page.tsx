@@ -142,7 +142,7 @@ export default function ArtistProgrammationDetailPage({
           supabase
             .from('residencies')
             .select(
-              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_address_zip, default_event_address_city, default_event_address_country)'
+              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
             )
             .eq('id', residencyId)
             .maybeSingle(),
@@ -262,9 +262,9 @@ export default function ArtistProgrammationDetailPage({
   const addressFromClient = buildAddress(
     clientAddress?.default_event_address_line1,
     clientAddress?.default_event_address_line2,
-    clientAddress?.default_event_address_zip,
-    clientAddress?.default_event_address_city,
-    clientAddress?.default_event_address_country
+    clientAddress?.default_event_zip,
+    clientAddress?.default_event_city,
+    clientAddress?.default_event_country
   );
   const resolvedAddress = addressFromResidency || addressFromClient;
   const mapsUrl = resolvedAddress
