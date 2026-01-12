@@ -77,6 +77,11 @@ type ResidencyOccurrence = {
   date: string;
 };
 
+type ResidencyApplication = {
+  date: string;
+  status: 'PENDING' | 'CONFIRMED' | 'DECLINED' | 'CANCELLED';
+};
+
 const formatMoney = (cents: number, currency = 'EUR') =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency }).format(cents / 100);
 
@@ -108,12 +113,14 @@ export default function ArtistProgrammationDetailPage({
   const [residency, setResidency] = useState<ResidencyRow | null>(null);
   const [weeks, setWeeks] = useState<ResidencyWeek[]>([]);
   const [occurrences, setOccurrences] = useState<ResidencyOccurrence[]>([]);
+  const [dateApplications, setDateApplications] = useState<ResidencyApplication[]>([]);
   const [applications, setApplications] = useState<WeekApplication[]>([]);
   const [artistId, setArtistId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyWeekId, setBusyWeekId] = useState<string | null>(null);
   const [busyDate, setBusyDate] = useState<string | null>(null);
+  const [cancelInfo, setCancelInfo] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -173,8 +180,16 @@ export default function ArtistProgrammationDetailPage({
             .order('date', { ascending: true });
           if (occErr) throw occErr;
           setOccurrences((occData as ResidencyOccurrence[]) ?? []);
+          const { data: appData, error: appErr } = await supabase
+            .from('residency_applications')
+            .select('date, status')
+            .eq('residency_id', residencyId)
+            .eq('artist_id', identity.artistId);
+          if (appErr) throw appErr;
+          setDateApplications((appData as ResidencyApplication[]) ?? []);
         } else {
           setOccurrences([]);
+          setDateApplications([]);
         }
       } catch (e: any) {
         setError(e?.message ?? 'Erreur de chargement');
@@ -190,13 +205,11 @@ export default function ArtistProgrammationDetailPage({
     return map;
   }, [applications]);
 
-  const weekByDate = useMemo(() => {
-    const map = new Map<string, ResidencyWeek>();
-    for (const w of weeks) {
-      if (w.start_date_sun) map.set(w.start_date_sun, w);
-    }
+  const appByDate = useMemo(() => {
+    const map = new Map<string, ResidencyApplication>();
+    for (const app of dateApplications) map.set(app.date, app);
     return map;
-  }, [weeks]);
+  }, [dateApplications]);
 
   async function refreshWeeksAndApps(currentArtistId: string) {
     const [weeksRes, appsRes] = await Promise.all([
@@ -212,6 +225,15 @@ export default function ArtistProgrammationDetailPage({
     ]);
     if (!weeksRes.error) setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
     if (!appsRes.error) setApplications((appsRes.data as WeekApplication[]) ?? []);
+  }
+
+  async function refreshDateApplications(currentArtistId: string) {
+    const { data: appData, error: appErr } = await supabase
+      .from('residency_applications')
+      .select('date, status')
+      .eq('residency_id', residencyId)
+      .eq('artist_id', currentArtistId);
+    if (!appErr) setDateApplications((appData as ResidencyApplication[]) ?? []);
   }
 
   async function apply(week: ResidencyWeek) {
@@ -271,6 +293,7 @@ export default function ArtistProgrammationDetailPage({
     try {
       setBusyDate(date);
       setError(null);
+      setCancelInfo(null);
       const res = await fetch('/api/artist/programmations/apply', {
         method: 'POST',
         credentials: 'include',
@@ -281,9 +304,34 @@ export default function ArtistProgrammationDetailPage({
       if (!json.ok) {
         throw new Error(json.error || 'Impossible de se positionner.');
       }
-      await refreshWeeksAndApps(artistId);
+      await refreshDateApplications(artistId);
     } catch (e: any) {
       setError(e?.message ?? 'Impossible de se positionner.');
+    } finally {
+      setBusyDate(null);
+    }
+  }
+
+  async function cancelApplication(date: string) {
+    if (!artistId || !residencyId) return;
+    try {
+      setBusyDate(date);
+      setError(null);
+      setCancelInfo(null);
+      const res = await fetch('/api/artist/programmations/cancel-application', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ residency_id: residencyId, date }),
+      });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error || 'Impossible de retirer la candidature.');
+      }
+      await refreshDateApplications(artistId);
+      setCancelInfo('Candidature retirée.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Impossible de retirer la candidature.');
     } finally {
       setBusyDate(null);
     }
@@ -385,37 +433,42 @@ export default function ArtistProgrammationDetailPage({
       {residency.mode === 'DATES' ? (
         <section className="space-y-3">
           <h2 className="font-semibold">Dates</h2>
+          {cancelInfo ? (
+            <div className="text-sm text-emerald-600">{cancelInfo}</div>
+          ) : null}
           {occurrences.length === 0 ? (
             <div className="text-sm text-amber-700">
               Les dates ne sont pas visibles pour votre compte. Contactez l’administrateur.
             </div>
           ) : (
             occurrences.map((occ) => {
-              const week = weekByDate.get(occ.date);
-              const app = week ? appByWeek.get(week.id) : undefined;
-              const bookings = week ? (toArray(week.week_bookings) as WeekBooking[]) : [];
-              const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
-              const isMyConfirmed =
-                confirmedBooking?.artist_id && confirmedBooking.artist_id === artistId;
-              const isApplied = app?.status === 'APPLIED';
-              const isRejected = app?.status === 'REJECTED';
+              const app = appByDate.get(occ.date);
+              const appStatus = app?.status ?? null;
+              const isApplied = appStatus === 'PENDING';
+              const isConfirmed = appStatus === 'CONFIRMED';
+              const isRejected = appStatus === 'DECLINED';
+              const isCancelled = appStatus === 'CANCELLED';
               const status = !residency.is_open
                 ? 'Sur invitation uniquement'
-                : isMyConfirmed
+                : isConfirmed
                 ? 'Confirmé'
                 : isRejected
                 ? 'Refusé'
+                : isCancelled
+                ? 'Annulé'
                 : isApplied
                 ? 'En attente'
                 : 'Disponible ?';
               const badgeClass =
                 status === 'Confirmé'
                   ? 'bg-emerald-100 text-emerald-700'
-                  : status === 'En attente'
+                : status === 'En attente'
                   ? 'bg-amber-100 text-amber-700'
-                  : status === 'Refusé'
+                : status === 'Refusé'
                   ? 'bg-rose-100 text-rose-700'
-                  : status === 'Disponible ?'
+                : status === 'Annulé'
+                  ? 'bg-slate-100 text-slate-600'
+                : status === 'Disponible ?'
                   ? 'bg-slate-100 text-slate-600'
                   : 'bg-slate-100 text-slate-600';
               return (
@@ -427,13 +480,16 @@ export default function ArtistProgrammationDetailPage({
                   {isApplied ? (
                     <div className="text-sm text-slate-600">Candidature envoyée.</div>
                   ) : null}
-                  {isMyConfirmed ? (
+                  {isConfirmed ? (
                     <div className="text-sm text-slate-600">Vous êtes confirmé sur cette date.</div>
+                  ) : null}
+                  {isCancelled ? (
+                    <div className="text-sm text-slate-600">Candidature annulée.</div>
                   ) : null}
                   {!residency.is_open ? (
                     <div className="text-sm text-slate-500">Sur invitation uniquement.</div>
                   ) : null}
-                  {residency.is_open && !isApplied && !isMyConfirmed && !isRejected ? (
+                  {residency.is_open && !isApplied && !isConfirmed && !isRejected && !isCancelled ? (
                     <div>
                       <button
                         className="btn btn-primary"
@@ -441,6 +497,17 @@ export default function ArtistProgrammationDetailPage({
                         onClick={() => applyDate(occ.date)}
                       >
                         {busyDate === occ.date ? 'Envoi…' : 'Je suis disponible'}
+                      </button>
+                    </div>
+                  ) : null}
+                  {residency.is_open && isApplied ? (
+                    <div>
+                      <button
+                        className="btn"
+                        disabled={busyDate === occ.date}
+                        onClick={() => cancelApplication(occ.date)}
+                      >
+                        {busyDate === occ.date ? 'Mise à jour…' : 'Retirer ma candidature'}
                       </button>
                     </div>
                   ) : null}

@@ -52,85 +52,30 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: resRow, error: resErr } = await supabase
-      .from('residencies')
-      .select('id, mode, is_public, is_open, start_date, end_date')
-      .eq('id', residency_id)
-      .maybeSingle();
-    if (resErr || !resRow) {
-      return NextResponse.json(
-        { ok: false, error: 'Programmation introuvable.' },
-        { status: 404 }
-      );
-    }
-    if (!resRow.is_public || !resRow.is_open) {
-      return NextResponse.json(
-        { ok: false, error: 'Programmation fermée aux candidatures.' },
-        { status: 403 }
-      );
-    }
-
-    if (resRow.mode === 'DATES') {
-      const { data: occRow, error: occErr } = await supabase
-        .from('residency_occurrences')
-        .select('id')
-        .eq('residency_id', residency_id)
-        .eq('date', date)
-        .maybeSingle();
-      if (occErr) {
-        return NextResponse.json(
-          { ok: false, error: 'Impossible de vérifier la date.' },
-          { status: 500 }
-        );
-      }
-      if (!occRow?.id) {
-        return NextResponse.json(
-          { ok: false, error: 'Cette date ne fait pas partie de cette programmation.' },
-          { status: 400 }
-        );
-      }
-    } else {
-      if (date < resRow.start_date || date > resRow.end_date) {
-        return NextResponse.json(
-          { ok: false, error: 'Cette date ne fait pas partie de cette programmation.' },
-          { status: 400 }
-        );
-      }
-    }
-
-    const { data: existingApp, error: appErr } = await supabase
+    const { data, error } = await supabase
       .from('residency_applications')
-      .select('status')
+      .update({ status: 'CANCELLED' })
       .eq('residency_id', residency_id)
       .eq('artist_id', identity.artistId)
       .eq('date', date)
+      .eq('status', 'PENDING')
+      .select('date')
       .maybeSingle();
-    if (appErr) {
+
+    if (error) {
       return NextResponse.json(
-        { ok: false, error: 'Impossible de vérifier la candidature.' },
+        { ok: false, error: 'Impossible de retirer la candidature.' },
         { status: 500 }
       );
     }
-    if (existingApp?.status) {
-      return NextResponse.json({ ok: true, status: existingApp.status });
-    }
-
-    const { error: insErr } = await supabase
-      .from('residency_applications')
-      .insert({
-        residency_id,
-        artist_id: identity.artistId,
-        date,
-        status: 'PENDING',
-      });
-    if (insErr) {
+    if (!data?.date) {
       return NextResponse.json(
-        { ok: false, error: 'Envoi de la candidature impossible.' },
-        { status: 500 }
+        { ok: false, error: 'Aucune candidature en attente à retirer.' },
+        { status: 400 }
       );
     }
 
-    return NextResponse.json({ ok: true, status: 'PENDING' });
+    return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json(
       { ok: false, error: e?.message ?? 'Erreur serveur' },
