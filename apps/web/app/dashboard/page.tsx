@@ -385,13 +385,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h1 className="text-3xl font-bold">
-          Plateforme Swing Booking – mise en relation établissements & artistes
-        </h1>
-        <p className="text-slate-600">
-          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
-          et prochains événements.
-        </p>
+        <h1 className="text-3xl font-bold">Tableau de bord</h1>
         {lastError && (
           <div className="mt-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm whitespace-pre-wrap">
             {lastError}
@@ -453,6 +447,9 @@ export default function DashboardPage() {
               <div className="md:col-span-2 border rounded-2xl p-4 space-y-3 bg-white">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-semibold">Mon profil artiste</h2>
+                  <Link href="/artist/profile" className="btn btn-primary">
+                    Modifier mon profil
+                  </Link>
                 </div>
 
                 <div className="space-y-2">
@@ -769,11 +766,7 @@ function VenueDashboard({
       {/* Header + raccourcis */}
       <div className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-1">
-          <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
-          <p className="text-slate-600 text-sm">
-            Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
-            et prochains événements.
-          </p>
+          <h2 className="text-2xl font-bold">Tableau de bord client</h2>
         </div>
         <QuickLinks
           items={[
@@ -952,11 +945,7 @@ function VenueHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
-        <p className="text-slate-600 text-sm">
-          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
-          et prochains événements.
-        </p>
+        <h2 className="text-2xl font-bold">Tableau de bord client</h2>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
             Demandes : <strong>{stats.totalRequests}</strong>
@@ -1017,11 +1006,7 @@ function ArtistHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
-        <p className="text-slate-600 text-sm">
-          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
-          et prochains événements.
-        </p>
+        <h2 className="text-2xl font-bold">Tableau de bord artiste</h2>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
             Invitations : <strong>{stats.totalInvites}</strong>
@@ -1060,11 +1045,7 @@ function AdminHeaderStats({
   return (
     <div className="border rounded-2xl p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between bg-white">
       <div>
-        <h2 className="text-2xl font-bold">Plateforme Swing Booking – mise en relation établissements & artistes</h2>
-        <p className="text-slate-600 text-sm">
-          Vue d&apos;ensemble de votre activité : demandes, propositions, artistes débloqués
-          et prochains événements.
-        </p>
+        <h2 className="text-2xl font-bold">Administration</h2>
         <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
           <span>
             Demandes : <strong>{stats.totalRequests}</strong>
