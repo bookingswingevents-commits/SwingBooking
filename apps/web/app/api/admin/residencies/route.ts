@@ -117,10 +117,21 @@ export async function POST(req: Request) {
     }
 
     if (mode === 'RANGE') {
-      const weekRows = weeks.map((w) => ({
-        ...w,
-        residency_id: residency.id,
-      }));
+      const weekRows = weeks.map((w) => {
+        const fee_cents = w.type === 'BUSY' ? 30000 : w.type === 'CALM' ? 15000 : null;
+        if (!fee_cents) return null;
+        return {
+          ...w,
+          fee_cents,
+          residency_id: residency.id,
+        };
+      });
+      if (weekRows.some((row) => !row)) {
+        return NextResponse.json(
+          { ok: false, error: 'Type de semaine invalide pour le cachet.' },
+          { status: 400 }
+        );
+      }
 
       const { error: weeksErr } = await supaSrv.from('residency_weeks').insert(weekRows);
       if (weeksErr) {
