@@ -101,6 +101,26 @@ type ArtistOption = {
   email?: string | null;
 };
 
+type BookingRequestMini = {
+  id: string;
+  event_date: string | null;
+  status: string | null;
+};
+
+type RequestArtistRow = {
+  request_id: string;
+  status: string | null;
+  artists?: { stage_name: string | null } | { stage_name: string | null }[] | null;
+};
+
+type DateStatusSummary = {
+  status: 'CONFIRMED' | 'PENDING' | 'DECLINED' | 'EMPTY';
+  confirmedArtists: string[];
+  invitedCount: number;
+  declinedCount: number;
+  invitedArtists: { name: string; status: string }[];
+};
+
 const formatMoney = (cents: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100);
 
@@ -127,6 +147,30 @@ function normalizeTermsMode(
 ): 'SIMPLE_FEE' | 'RESIDENCY_WEEKLY' {
   if (mode === 'SIMPLE_FEE') return 'SIMPLE_FEE';
   return 'RESIDENCY_WEEKLY';
+}
+
+function toISODate(date: Date) {
+  const normalized = new Date(date);
+  normalized.setHours(12, 0, 0, 0);
+  const year = normalized.getFullYear();
+  const month = `${normalized.getMonth() + 1}`.padStart(2, '0');
+  const day = `${normalized.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function enumerateDates(startDate: string, endDate: string) {
+  const dates: string[] = [];
+  const start = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return dates;
+  let cursor = start;
+  while (cursor <= end) {
+    dates.push(toISODate(cursor));
+    const next = new Date(cursor);
+    next.setDate(next.getDate() + 1);
+    cursor = next;
+  }
+  return dates;
 }
 
 export default function AdminResidencyDetailPage({
@@ -158,7 +202,14 @@ export default function AdminResidencyDetailPage({
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editIsOpen, setEditIsOpen] = useState(true);
   const [isEditingConditions, setIsEditingConditions] = useState(false);
-  const mapsKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  const [dateStatusMap, setDateStatusMap] = useState<Record<string, DateStatusSummary>>({});
+  const [addressLine1, setAddressLine1] = useState('');
+  const [addressLine2, setAddressLine2] = useState('');
+  const [addressZip, setAddressZip] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [addressCountry, setAddressCountry] = useState('');
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [copyMessage, setCopyMessage] = useState('');
 
   async function loadData() {
     if (!residencyId) {
@@ -203,6 +254,7 @@ export default function AdminResidencyDetailPage({
         .order('created_at', { ascending: false });
       if (invRes.error) throw invRes.error;
 
+      let datesInRes: string[] | null = null;
       if (resRow?.mode === 'DATES') {
         const occRes = await supabase
           .from('residency_occurrences')
@@ -210,7 +262,9 @@ export default function AdminResidencyDetailPage({
           .eq('residency_id', residencyId)
           .order('date', { ascending: true });
         if (occRes.error) throw occRes.error;
-        setOccurrences((occRes.data as ResidencyOccurrence[]) ?? []);
+        const occRows = (occRes.data as ResidencyOccurrence[]) ?? [];
+        setOccurrences(occRows);
+        datesInRes = occRows.map((o) => o.date);
         setWeeks([]);
       } else {
         const weeksRes = await supabase
@@ -221,8 +275,13 @@ export default function AdminResidencyDetailPage({
           .eq('residency_id', residencyId)
           .order('start_date_sun', { ascending: true });
         if (weeksRes.error) throw weeksRes.error;
-        setWeeks((weeksRes.data as ResidencyWeek[]) ?? []);
+        const weekRows = (weeksRes.data as ResidencyWeek[]) ?? [];
+        setWeeks(weekRows);
         setOccurrences([]);
+        const weekDates = weekRows.flatMap((w) =>
+          enumerateDates(w.start_date_sun, w.end_date_sun)
+        );
+        datesInRes = weekDates;
       }
 
       setResidency(resRow);
@@ -239,7 +298,18 @@ export default function AdminResidencyDetailPage({
       setEditFeeIsNet(resRow.fee_is_net ?? true);
       setEditIsPublic(!!resRow.is_public);
       setEditIsOpen(!!resRow.is_open);
+      setAddressLine1(resRow.event_address_line1 ?? '');
+      setAddressLine2(resRow.event_address_line2 ?? '');
+      setAddressZip(resRow.event_address_zip ?? '');
+      setAddressCity(resRow.event_address_city ?? '');
+      setAddressCountry(resRow.event_address_country ?? '');
       setInvitations((invRes.data as InvitationRow[]) ?? []);
+
+      if (datesInRes && datesInRes.length > 0) {
+        await loadDateStatuses(datesInRes);
+      } else {
+        setDateStatusMap({});
+      }
     } catch (e: any) {
       setError(e?.message ?? 'Erreur de chargement');
     } finally {
@@ -258,12 +328,161 @@ export default function AdminResidencyDetailPage({
     }
   }
 
+  async function loadDateStatuses(dates: string[]) {
+    const uniqueDates = Array.from(new Set(dates.filter(Boolean)));
+    if (uniqueDates.length === 0) {
+      setDateStatusMap({});
+      return;
+    }
+    try {
+      const [occRes, reqRes] = await Promise.all([
+        supabase
+          .from('booking_request_occurrences')
+          .select('request_id, date')
+          .in('date', uniqueDates),
+        supabase
+          .from('booking_requests')
+          .select('id, event_date, status')
+          .in('event_date', uniqueDates),
+      ]);
+
+      const occRows = (occRes.data ?? []) as { request_id: string; date: string }[];
+      const reqRows = (reqRes.data ?? []) as BookingRequestMini[];
+
+      const ids = new Set<string>();
+      const byDate: Record<string, string[]> = {};
+      uniqueDates.forEach((d) => {
+        byDate[d] = [];
+      });
+
+      occRows.forEach((row) => {
+        if (!byDate[row.date]) byDate[row.date] = [];
+        byDate[row.date].push(row.request_id);
+        ids.add(row.request_id);
+      });
+
+      reqRows.forEach((row) => {
+        if (!row.event_date) return;
+        if (!byDate[row.event_date]) byDate[row.event_date] = [];
+        byDate[row.event_date].push(row.id);
+        ids.add(row.id);
+      });
+
+      const requestIds = Array.from(ids);
+      if (requestIds.length === 0) {
+        setDateStatusMap(
+          uniqueDates.reduce<Record<string, DateStatusSummary>>((acc, date) => {
+            acc[date] = {
+              status: 'EMPTY',
+              confirmedArtists: [],
+              invitedCount: 0,
+              declinedCount: 0,
+              invitedArtists: [],
+            };
+            return acc;
+          }, {})
+        );
+        return;
+      }
+
+      const { data: inviteRows } = await supabase
+        .from('request_artists')
+        .select('request_id, status, artists(stage_name)')
+        .in('request_id', requestIds);
+
+      const inviteList = (inviteRows ?? []) as RequestArtistRow[];
+      const invitesByRequest: Record<string, RequestArtistRow[]> = {};
+      inviteList.forEach((row) => {
+        if (!invitesByRequest[row.request_id]) invitesByRequest[row.request_id] = [];
+        invitesByRequest[row.request_id].push({
+          ...row,
+          artists: Array.isArray(row.artists) ? row.artists[0] ?? null : row.artists,
+        });
+      });
+
+      const requestById: Record<string, BookingRequestMini> = {};
+      reqRows.forEach((row) => {
+        requestById[row.id] = row;
+      });
+
+      const confirmedStatuses = new Set([
+        'confirmed',
+        'accepted',
+        'booked',
+        'validated',
+        'client_approved',
+      ]);
+
+      const map: Record<string, DateStatusSummary> = {};
+      uniqueDates.forEach((date) => {
+        const reqIds = Array.from(new Set(byDate[date] ?? []));
+        if (reqIds.length === 0) {
+          map[date] = {
+            status: 'EMPTY',
+            confirmedArtists: [],
+            invitedCount: 0,
+            declinedCount: 0,
+            invitedArtists: [],
+          };
+          return;
+        }
+
+        const invites = reqIds.flatMap((id) => invitesByRequest[id] ?? []);
+        const invitedArtists = invites.map((inv) => ({
+          name:
+            (Array.isArray(inv.artists) ? inv.artists[0]?.stage_name : inv.artists?.stage_name) ||
+            'Artiste',
+          status: inv.status ?? 'invited',
+        }));
+        const invitedCount = invites.length;
+        const declinedCount = invites.filter((inv) =>
+          ['declined', 'expired'].includes(String(inv.status ?? '').toLowerCase())
+        ).length;
+        const confirmedArtists = invites
+          .filter((inv) => String(inv.status ?? '').toLowerCase() === 'accepted')
+          .map((inv) =>
+            (Array.isArray(inv.artists) ? inv.artists[0]?.stage_name : inv.artists?.stage_name) ||
+            'Artiste'
+          );
+
+        const anyConfirmedRequest = reqIds.some((id) => {
+          const st = String(requestById[id]?.status ?? '').toLowerCase();
+          return confirmedStatuses.has(st);
+        });
+
+        let status: DateStatusSummary['status'] = 'EMPTY';
+        if (anyConfirmedRequest) {
+          status = 'CONFIRMED';
+        } else if (invitedCount === 0) {
+          status = 'EMPTY';
+        } else if (declinedCount === invitedCount) {
+          status = 'DECLINED';
+        } else {
+          status = 'PENDING';
+        }
+
+        map[date] = {
+          status,
+          confirmedArtists,
+          invitedCount,
+          declinedCount,
+          invitedArtists,
+        };
+      });
+
+      setDateStatusMap(map);
+    } catch {
+      setDateStatusMap({});
+    }
+  }
+
   useEffect(() => {
     if (!residencyId) return;
     setResidency(null);
     setWeeks([]);
     setOccurrences([]);
     setInvitations([]);
+    setDateStatusMap({});
     setError(null);
     setLoading(true);
     loadData();
@@ -416,6 +635,40 @@ export default function AdminResidencyDetailPage({
     }
   }
 
+  async function saveAddress() {
+    if (!residency) return;
+    try {
+      setActionLoading(true);
+      const { error: upErr } = await supabase
+        .from('residencies')
+        .update({
+          event_address_line1: addressLine1.trim() || null,
+          event_address_line2: addressLine2.trim() || null,
+          event_address_zip: addressZip.trim() || null,
+          event_address_city: addressCity.trim() || null,
+          event_address_country: addressCountry.trim() || null,
+        })
+        .eq('id', residency.id);
+      if (upErr) throw upErr;
+      setShowAddressModal(false);
+      await loadData();
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la mise a jour');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  function copyAddress(text: string) {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopyMessage('Adresse copiée');
+        setTimeout(() => setCopyMessage(''), 1500);
+      },
+      () => setCopyMessage('Impossible de copier')
+    );
+  }
+
   function cancelEditConditions() {
     if (!residency) return;
     setEditLodging(!!residency.lodging_included);
@@ -518,6 +771,7 @@ export default function AdminResidencyDetailPage({
   const clientRow = Array.isArray(residency.clients)
     ? residency.clients[0]
     : (residency.clients as any);
+  const usesResidencyAddress = !!residency.event_address_line1;
   const resolvedLine2 = residency.event_address_line2 ?? clientRow?.default_event_address_line2 ?? null;
   const resolvedAddress = buildAddress(
     residency.event_address_line1 ?? clientRow?.default_event_address_line1 ?? null,
@@ -529,11 +783,58 @@ export default function AdminResidencyDetailPage({
   const mapLink = resolvedAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
     : null;
-  const staticMapUrl =
-    mapsKey && resolvedAddress
-      ? `https://maps.googleapis.com/maps/api/staticmap?center=${encodeURIComponent(resolvedAddress)}&zoom=13&size=600x300&maptype=roadmap&markers=color:red%7C${encodeURIComponent(resolvedAddress)}&key=${mapsKey}`
-      : null;
   const normalizedTermsMode = normalizeTermsMode(residency.terms_mode);
+  const weekSummary = (week: ResidencyWeek): DateStatusSummary => {
+    const dates = enumerateDates(week.start_date_sun, week.end_date_sun);
+    const summaries = dates.map((d) => dateStatusMap[d]).filter(Boolean) as DateStatusSummary[];
+    if (summaries.length === 0) {
+      return {
+        status: 'EMPTY',
+        confirmedArtists: [],
+        invitedCount: 0,
+        declinedCount: 0,
+        invitedArtists: [],
+      };
+    }
+
+    let anyConfirmed = false;
+    let anyPending = false;
+    let anyDeclined = false;
+    let invitedCount = 0;
+    let declinedCount = 0;
+    const confirmedArtists: string[] = [];
+    const invitedArtists: { name: string; status: string }[] = [];
+
+    summaries.forEach((s) => {
+      if (s.status === 'CONFIRMED') anyConfirmed = true;
+      if (s.status === 'PENDING') anyPending = true;
+      if (s.status === 'DECLINED') anyDeclined = true;
+      invitedCount += s.invitedCount;
+      declinedCount += s.declinedCount;
+      invitedArtists.push(...s.invitedArtists);
+      confirmedArtists.push(...s.confirmedArtists);
+    });
+
+    const uniqueConfirmed = Array.from(new Set(confirmedArtists));
+    let status: DateStatusSummary['status'] = 'EMPTY';
+    if (anyConfirmed) {
+      status = 'CONFIRMED';
+    } else if (invitedCount === 0) {
+      status = 'EMPTY';
+    } else if (!anyPending && anyDeclined) {
+      status = 'DECLINED';
+    } else {
+      status = 'PENDING';
+    }
+
+    return {
+      status,
+      confirmedArtists: uniqueConfirmed,
+      invitedCount,
+      declinedCount,
+      invitedArtists,
+    };
+  };
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -552,44 +853,47 @@ export default function AdminResidencyDetailPage({
 
       <section className="rounded-xl border p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="space-y-2">
             <h2 className="font-semibold">Lieu de la prestation</h2>
             {resolvedAddress ? (
-              <div className="text-sm text-slate-600 mt-1">
-                <div>{resolvedAddress}</div>
-                {resolvedLine2 ? (
-                  <div className="text-xs text-slate-500">{resolvedLine2}</div>
+              <div className="text-sm text-slate-700 space-y-1">
+                <div>{residency.event_address_line1 ?? clientRow?.default_event_address_line1}</div>
+                {resolvedLine2 ? <div>{resolvedLine2}</div> : null}
+                <div>
+                  {(residency.event_address_zip ?? clientRow?.default_event_address_zip) || ''}{' '}
+                  {(residency.event_address_city ?? clientRow?.default_event_address_city) || ''}
+                </div>
+                {residency.event_address_country || clientRow?.default_event_address_country ? (
+                  <div>{residency.event_address_country ?? clientRow?.default_event_address_country}</div>
                 ) : null}
               </div>
             ) : (
-              <div className="text-sm text-slate-500 mt-1">Adresse non renseignée.</div>
+              <div className="text-sm text-slate-500">Adresse non renseignée.</div>
             )}
+            {resolvedAddress ? (
+              <span className="inline-flex text-xs px-2 py-1 rounded-full border text-slate-600 w-fit">
+                {usesResidencyAddress ? 'Adresse programmation' : 'Adresse par défaut'}
+              </span>
+            ) : null}
           </div>
-          {mapLink ? (
-            <a
-              href={mapLink}
-              target="_blank"
-              className="btn btn-primary"
-              rel="noreferrer"
-            >
-              Voir sur Google Maps
-            </a>
-          ) : null}
         </div>
-        {resolvedAddress ? (
-          staticMapUrl ? (
-            <img
-              src={staticMapUrl}
-              alt="Aperçu carte"
-              loading="lazy"
-              className="rounded-xl border h-48 w-full object-cover"
-            />
+        <div className="flex flex-wrap gap-2 items-center">
+          {mapLink ? (
+            <a href={mapLink} target="_blank" className="btn btn-primary" rel="noreferrer">
+              Ouvrir dans Google Maps
+            </a>
           ) : (
-            <div className="rounded-xl border bg-slate-50 text-sm text-slate-500 flex items-center justify-center h-48">
-              Aperçu carte indisponible (clé Google Maps manquante)
-            </div>
-          )
-        ) : null}
+            <button className="btn btn-primary" onClick={() => setShowAddressModal(true)}>
+              Ajouter une adresse
+            </button>
+          )}
+          {resolvedAddress ? (
+            <button className="btn" onClick={() => copyAddress(resolvedAddress)}>
+              Copier l’adresse
+            </button>
+          ) : null}
+          {copyMessage ? <span className="text-xs text-slate-500">{copyMessage}</span> : null}
+        </div>
       </section>
 
       <section className="rounded-xl border p-4 space-y-3">
@@ -865,24 +1169,74 @@ export default function AdminResidencyDetailPage({
             <div className="text-sm text-slate-500">Aucune date enregistree.</div>
           ) : (
             <div className="rounded-xl border divide-y">
-              {occurrences.map((occ) => (
-                <div key={occ.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
-                  <div>
-                    <div className="font-medium">{fmtDateFR(occ.date)}</div>
-                    <div className="text-xs text-slate-500">
-                      {occ.start_time || '—'} → {occ.end_time || '—'}
-                      {occ.notes ? ` • ${occ.notes}` : ''}
+              {occurrences.map((occ) => {
+                const summary = dateStatusMap[occ.date];
+                const status = summary?.status ?? 'EMPTY';
+                const badgeClass =
+                  status === 'CONFIRMED'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : status === 'PENDING'
+                    ? 'bg-amber-100 text-amber-700'
+                    : status === 'DECLINED'
+                    ? 'bg-rose-100 text-rose-700'
+                    : 'bg-slate-100 text-slate-600';
+                return (
+                  <div key={occ.id} className="flex flex-wrap items-start justify-between gap-3 p-3 text-sm">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium">{fmtDateFR(occ.date)}</div>
+                        <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                          {status === 'CONFIRMED'
+                            ? 'Confirmé'
+                            : status === 'PENDING'
+                            ? 'En attente'
+                            : status === 'DECLINED'
+                            ? 'Tous refusés'
+                            : 'Aucun artiste'}
+                        </span>
+                      </div>
+                      {summary && status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
+                        <div className="text-xs text-slate-600">
+                          Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
+                        </div>
+                      ) : null}
+                      {summary && status === 'PENDING' ? (
+                        <div className="text-xs text-slate-600">
+                          Invitations envoyées: {summary.invitedCount}
+                          {summary.invitedArtists.length > 0
+                            ? ` • ${summary.invitedArtists
+                                .map((a) => `${a.name} (${a.status})`)
+                                .join(', ')}`
+                            : ''}
+                        </div>
+                      ) : null}
+                      {summary && status === 'DECLINED' ? (
+                        <div className="text-xs text-slate-600">
+                          Refusés: {summary.declinedCount}
+                        </div>
+                      ) : null}
+                      {status === 'EMPTY' || (status === 'PENDING' && (summary?.invitedCount ?? 0) === 0) ? (
+                        <Link
+                          href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&event_date=${encodeURIComponent(occ.date)}`}
+                          className="btn btn-primary"
+                        >
+                          Inviter un artiste
+                        </Link>
+                      ) : null}
+                      {occ.notes ? (
+                        <div className="text-xs text-slate-500">{occ.notes}</div>
+                      ) : null}
                     </div>
+                    <button
+                      className="btn"
+                      onClick={() => deleteOccurrence(occ.id)}
+                      disabled={actionLoading}
+                    >
+                      Supprimer
+                    </button>
                   </div>
-                  <button
-                    className="btn"
-                    onClick={() => deleteOccurrence(occ.id)}
-                    disabled={actionLoading}
-                  >
-                    Supprimer
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -896,6 +1250,15 @@ export default function AdminResidencyDetailPage({
             const pendingCount = applications.filter((a) => a.status === 'APPLIED').length;
             const statusLabel =
               w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'OPEN';
+            const summary = weekSummary(w);
+            const badgeClass =
+              summary.status === 'CONFIRMED'
+                ? 'bg-emerald-100 text-emerald-700'
+                : summary.status === 'PENDING'
+                ? 'bg-amber-100 text-amber-700'
+                : summary.status === 'DECLINED'
+                ? 'bg-rose-100 text-rose-700'
+                : 'bg-slate-100 text-slate-600';
             return (
               <div key={w.id} className="rounded-xl border p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -910,6 +1273,15 @@ export default function AdminResidencyDetailPage({
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-xs uppercase tracking-wide text-slate-500">{statusLabel}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                      {summary.status === 'CONFIRMED'
+                        ? 'Confirmé'
+                        : summary.status === 'PENDING'
+                        ? 'En attente'
+                        : summary.status === 'DECLINED'
+                        ? 'Tous refusés'
+                        : 'Aucun artiste'}
+                    </span>
                     <select
                       className="border rounded-lg px-2 py-1 text-sm"
                       value={w.type}
@@ -921,6 +1293,37 @@ export default function AdminResidencyDetailPage({
                     </select>
                   </div>
                 </div>
+
+                {summary.status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
+                  <div className="text-xs text-slate-600">
+                    Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
+                  </div>
+                ) : null}
+                {summary.status === 'PENDING' ? (
+                  <div className="text-xs text-slate-600">
+                    Invitations envoyées: {summary.invitedCount}
+                    {summary.invitedArtists.length > 0
+                      ? ` • ${summary.invitedArtists
+                          .map((a) => `${a.name} (${a.status})`)
+                          .join(', ')}`
+                      : ''}
+                  </div>
+                ) : null}
+                {summary.status === 'DECLINED' ? (
+                  <div className="text-xs text-slate-600">
+                    Tous refusés • Invitations: {summary.invitedCount}
+                  </div>
+                ) : null}
+                {summary.status === 'EMPTY' ? (
+                  <div>
+                    <Link
+                      href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&week_start=${encodeURIComponent(w.start_date_sun)}&week_end=${encodeURIComponent(w.end_date_sun)}`}
+                      className="btn btn-primary"
+                    >
+                      Inviter un artiste
+                    </Link>
+                  </div>
+                ) : null}
 
                 {confirmedBooking ? (
                   <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
@@ -975,6 +1378,61 @@ export default function AdminResidencyDetailPage({
           })}
         </section>
       )}
+
+      {showAddressModal ? (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-5 w-full max-w-lg space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Ajouter une adresse</h3>
+              <button className="text-sm underline" onClick={() => setShowAddressModal(false)}>
+                Fermer
+              </button>
+            </div>
+            <div className="grid gap-3">
+              <input
+                className="border rounded-lg px-3 py-2"
+                placeholder="Adresse ligne 1"
+                value={addressLine1}
+                onChange={(e) => setAddressLine1(e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-3 py-2"
+                placeholder="Adresse ligne 2"
+                value={addressLine2}
+                onChange={(e) => setAddressLine2(e.target.value)}
+              />
+              <div className="grid gap-3 md:grid-cols-2">
+                <input
+                  className="border rounded-lg px-3 py-2"
+                  placeholder="Code postal"
+                  value={addressZip}
+                  onChange={(e) => setAddressZip(e.target.value)}
+                />
+                <input
+                  className="border rounded-lg px-3 py-2"
+                  placeholder="Ville"
+                  value={addressCity}
+                  onChange={(e) => setAddressCity(e.target.value)}
+                />
+              </div>
+              <input
+                className="border rounded-lg px-3 py-2"
+                placeholder="Pays"
+                value={addressCountry}
+                onChange={(e) => setAddressCountry(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button className="btn" onClick={() => setShowAddressModal(false)}>
+                Annuler
+              </button>
+              <button className="btn btn-primary" onClick={saveAddress} disabled={actionLoading}>
+                Enregistrer
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

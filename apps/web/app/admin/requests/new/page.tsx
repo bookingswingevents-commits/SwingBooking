@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseBrowser';
 import { eventFormatOptions } from '@/lib/event-formats';
@@ -29,6 +29,11 @@ type VenueRow = {
 
 export default function AdminNewRequestPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const prefillArtistId = searchParams.get('artist_id') ?? '';
+  const prefillEventDate = searchParams.get('event_date') ?? '';
+  const prefillWeekStart = searchParams.get('week_start') ?? '';
+  const prefillWeekEnd = searchParams.get('week_end') ?? '';
 
   // UI
   const [loading, setLoading] = useState(false);
@@ -72,6 +77,15 @@ export default function AdminNewRequestPage() {
 
   // Charger établissements
   useEffect(() => {
+    if (prefillEventDate) {
+      setEventDate(prefillEventDate);
+    }
+    if (!prefillEventDate && prefillWeekStart) {
+      setEventDate(prefillWeekStart);
+    }
+    if (prefillWeekStart && prefillWeekEnd && !practicalInfo) {
+      setPracticalInfo(`Demande pour la semaine du ${prefillWeekStart} au ${prefillWeekEnd}.`);
+    }
     (async () => {
       setError('');
       try {
@@ -180,7 +194,10 @@ export default function AdminNewRequestPage() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j?.id) throw new Error(j?.error || 'Création impossible');
 
-      // Reste sur le formulaire après création (confirmation e2e)
+      if (prefillArtistId) {
+        router.push(`/admin/requests/${j.id}?artist_id=${encodeURIComponent(prefillArtistId)}`);
+        return;
+      }
       console.debug('Admin request created', j.id);
     } catch (e: any) {
       setError(e?.message ?? 'Erreur inconnue');
@@ -196,6 +213,18 @@ export default function AdminNewRequestPage() {
         </div>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">← Retour</Link>
       </header>
+
+      {prefillArtistId ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-900 text-sm">
+          Demande ciblée pour un artiste (ID: {prefillArtistId}). Après création, vous serez redirigé
+          pour l’invitation.
+        </div>
+      ) : null}
+      {prefillWeekStart && prefillWeekEnd ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-slate-700 text-sm">
+          Demande pour la semaine du {prefillWeekStart} au {prefillWeekEnd}.
+        </div>
+      ) : null}
 
       {error && (
         <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm whitespace-pre-wrap">
