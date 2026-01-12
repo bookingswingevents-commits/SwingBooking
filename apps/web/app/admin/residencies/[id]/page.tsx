@@ -211,6 +211,16 @@ export default function AdminResidencyDetailPage({
   const [addressCountry, setAddressCountry] = useState('');
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
+  const [addDatesOpen, setAddDatesOpen] = useState(false);
+  const [addDatesRaw, setAddDatesRaw] = useState('');
+  const [addDatesError, setAddDatesError] = useState<string | null>(null);
+  const [addDatesSuccess, setAddDatesSuccess] = useState<string | null>(null);
+  const [addDatesLoading, setAddDatesLoading] = useState(false);
+  const parsedDates = useMemo(() => parseDatesInput(addDatesRaw), [addDatesRaw]);
+  const existingDates = useMemo(
+    () => occurrences.map((occ) => occ.date).filter(Boolean).sort(),
+    [occurrences]
+  );
 
   async function loadData() {
     if (!residencyId) {
@@ -496,6 +506,12 @@ export default function AdminResidencyDetailPage({
     }
   }, []);
 
+  useEffect(() => {
+    if (!addDatesOpen) return;
+    if (addDatesRaw.trim() !== '') return;
+    setAddDatesRaw(existingDates.join('\n'));
+  }, [addDatesOpen, addDatesRaw, existingDates]);
+
   const filteredArtists = useMemo(() => {
     if (!searchArtist.trim()) return artists;
     const q = searchArtist.toLowerCase();
@@ -668,6 +684,71 @@ export default function AdminResidencyDetailPage({
       },
       () => setCopyMessage('Impossible de copier')
     );
+  }
+
+  function isValidISODate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const d = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(d.getTime())) return false;
+    const iso = d.toISOString().slice(0, 10);
+    return iso === value;
+  }
+
+  function parseDatesInput(input: string) {
+    const lines = input
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const valid: string[] = [];
+    const invalid: string[] = [];
+    for (const line of lines) {
+      if (isValidISODate(line)) valid.push(line);
+      else invalid.push(line);
+    }
+    const unique = Array.from(new Set(valid)).sort();
+    return { valid: unique, invalid };
+  }
+
+  async function addDates() {
+    if (!residency) return;
+    const { valid, invalid } = parseDatesInput(addDatesRaw);
+    if (valid.length === 0) {
+      setAddDatesError('Ajoutez au moins une date valide (YYYY-MM-DD).');
+      return;
+    }
+    if (invalid.length > 0) {
+      setAddDatesError('Certaines lignes ne sont pas des dates valides.');
+      return;
+    }
+    const existingSet = new Set(existingDates);
+    const newDates = valid.filter((date) => !existingSet.has(date));
+    if (newDates.length === 0) {
+      setAddDatesSuccess('Aucune nouvelle date à ajouter.');
+      return;
+    }
+    try {
+      setAddDatesLoading(true);
+      setAddDatesError(null);
+      const res = await fetch('/api/admin/residency-occurrences', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ residency_id: residency.id, dates: newDates }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Ajout impossible');
+      setAddDatesSuccess(
+        `✅ ${newDates.length} date${newDates.length > 1 ? 's' : ''} ajoutée${
+          newDates.length > 1 ? 's' : ''
+        } : ${newDates.join(', ')}`
+      );
+      setAddDatesRaw('');
+      await loadData();
+    } catch (e: any) {
+      setAddDatesError(e?.message ?? 'Erreur lors de l’ajout des dates');
+    } finally {
+      setAddDatesLoading(false);
+    }
   }
 
   function cancelEditConditions() {
@@ -1165,7 +1246,74 @@ export default function AdminResidencyDetailPage({
 
       {residency.mode === 'DATES' ? (
         <section className="space-y-4">
-          <h2 className="font-semibold">Dates</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold">Dates</h2>
+            <button
+              className="btn"
+              onClick={() => {
+                setAddDatesOpen((v) => !v);
+                setAddDatesRaw(existingDates.join('\n'));
+                setAddDatesError(null);
+                setAddDatesSuccess(null);
+              }}
+            >
+              Ajouter des dates
+            </button>
+          </div>
+          {addDatesOpen ? (
+            <div className="rounded-xl border p-4 space-y-3">
+              <div className="text-sm font-medium">Dates (1 par ligne, format YYYY-MM-DD)</div>
+              <textarea
+                className="w-full min-h-[120px] border rounded-lg px-3 py-2 text-sm"
+                placeholder="2025-01-04&#10;2025-01-11"
+                value={addDatesRaw}
+                onChange={(e) => {
+                  setAddDatesRaw(e.target.value);
+                  setAddDatesError(null);
+                  setAddDatesSuccess(null);
+                }}
+              />
+              <div className="text-xs text-slate-500">
+                Les dates existantes sont pré-remplies. Ajoute de nouvelles lignes pour ajouter des
+                dates.
+              </div>
+              <div className="text-sm text-slate-500">
+                {parsedDates.valid.length} date{parsedDates.valid.length > 1 ? 's' : ''} valide
+                {parsedDates.valid.length > 1 ? 's' : ''}.
+              </div>
+              {parsedDates.invalid.length > 0 ? (
+                <div className="text-sm text-rose-600">
+                  Lignes invalides: {parsedDates.invalid.join(', ')}
+                </div>
+              ) : null}
+              {addDatesError ? (
+                <div className="text-sm text-rose-600">{addDatesError}</div>
+              ) : null}
+              {addDatesSuccess ? (
+                <div className="text-sm text-emerald-600">{addDatesSuccess}</div>
+              ) : null}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setAddDatesOpen(false);
+                    setAddDatesRaw('');
+                    setAddDatesError(null);
+                    setAddDatesSuccess(null);
+                  }}
+                >
+                  Annuler
+                </button>
+                <button
+                  className="btn btn-primary"
+                  disabled={addDatesLoading || parsedDates.valid.length === 0}
+                  onClick={addDates}
+                >
+                  {addDatesLoading ? 'Ajout en cours…' : 'Ajouter'}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {occurrences.length === 0 ? (
             <div className="text-sm text-slate-500">Aucune date enregistree.</div>
           ) : (
