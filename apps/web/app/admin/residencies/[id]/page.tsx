@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { labelForStatus, labelForError } from '@/lib/i18n';
+import { DayPicker } from 'react-day-picker';
 
 type ResidencyRow = {
   id: string;
@@ -159,6 +160,13 @@ function toISODate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+function fromISODate(value: string) {
+  if (!value) return null;
+  const d = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 function enumerateDates(startDate: string, endDate: string) {
   const dates: string[] = [];
   const start = new Date(`${startDate}T12:00:00`);
@@ -212,11 +220,10 @@ export default function AdminResidencyDetailPage({
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [copyMessage, setCopyMessage] = useState('');
   const [addDatesOpen, setAddDatesOpen] = useState(false);
-  const [addDatesRaw, setAddDatesRaw] = useState('');
+  const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [addDatesError, setAddDatesError] = useState<string | null>(null);
   const [addDatesSuccess, setAddDatesSuccess] = useState<string | null>(null);
   const [addDatesLoading, setAddDatesLoading] = useState(false);
-  const parsedDates = useMemo(() => parseDatesInput(addDatesRaw), [addDatesRaw]);
   const existingDates = useMemo(
     () => occurrences.map((occ) => occ.date).filter(Boolean).sort(),
     [occurrences]
@@ -508,9 +515,11 @@ export default function AdminResidencyDetailPage({
 
   useEffect(() => {
     if (!addDatesOpen) return;
-    if (addDatesRaw.trim() !== '') return;
-    setAddDatesRaw(existingDates.join('\n'));
-  }, [addDatesOpen, addDatesRaw, existingDates]);
+    const preselected = existingDates
+      .map((date) => fromISODate(date))
+      .filter((d): d is Date => d instanceof Date);
+    setSelectedDates(preselected);
+  }, [addDatesOpen, existingDates]);
 
   const filteredArtists = useMemo(() => {
     if (!searchArtist.trim()) return artists;
@@ -686,42 +695,16 @@ export default function AdminResidencyDetailPage({
     );
   }
 
-  function isValidISODate(value: string) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-    const d = new Date(`${value}T12:00:00`);
-    if (Number.isNaN(d.getTime())) return false;
-    const iso = d.toISOString().slice(0, 10);
-    return iso === value;
-  }
-
-  function parseDatesInput(input: string) {
-    const lines = input
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean);
-    const valid: string[] = [];
-    const invalid: string[] = [];
-    for (const line of lines) {
-      if (isValidISODate(line)) valid.push(line);
-      else invalid.push(line);
-    }
-    const unique = Array.from(new Set(valid)).sort();
-    return { valid: unique, invalid };
-  }
-
   async function addDates() {
     if (!residency) return;
-    const { valid, invalid } = parseDatesInput(addDatesRaw);
-    if (valid.length === 0) {
-      setAddDatesError('Ajoutez au moins une date valide (YYYY-MM-DD).');
+    if (selectedDates.length === 0) {
+      setAddDatesError('Sélectionnez au moins une date.');
       return;
     }
-    if (invalid.length > 0) {
-      setAddDatesError('Certaines lignes ne sont pas des dates valides.');
-      return;
-    }
+    const selectedIso = selectedDates.map((date) => toISODate(date));
+    const uniqueSelected = Array.from(new Set(selectedIso)).sort();
     const existingSet = new Set(existingDates);
-    const newDates = valid.filter((date) => !existingSet.has(date));
+    const newDates = uniqueSelected.filter((date) => !existingSet.has(date));
     if (newDates.length === 0) {
       setAddDatesSuccess('Aucune nouvelle date à ajouter.');
       return;
@@ -1255,7 +1238,6 @@ export default function AdminResidencyDetailPage({
               className="btn"
               onClick={() => {
                 setAddDatesOpen((v) => !v);
-                setAddDatesRaw(existingDates.join('\n'));
                 setAddDatesError(null);
                 setAddDatesSuccess(null);
               }}
@@ -1268,30 +1250,19 @@ export default function AdminResidencyDetailPage({
           ) : null}
           {addDatesOpen ? (
             <div className="rounded-xl border p-4 space-y-3">
-              <div className="text-sm font-medium">Dates (1 par ligne, format YYYY-MM-DD)</div>
-              <textarea
-                className="w-full min-h-[120px] border rounded-lg px-3 py-2 text-sm"
-                placeholder="2025-01-04&#10;2025-01-11"
-                value={addDatesRaw}
-                onChange={(e) => {
-                  setAddDatesRaw(e.target.value);
+              <DayPicker
+                mode="multiple"
+                selected={selectedDates}
+                onSelect={(dates) => {
+                  setSelectedDates(dates ?? []);
                   setAddDatesError(null);
                   setAddDatesSuccess(null);
                 }}
               />
-              <div className="text-xs text-slate-500">
-                Les dates existantes sont pré-remplies. Ajoute de nouvelles lignes pour ajouter des
-                dates.
-              </div>
               <div className="text-sm text-slate-500">
-                {parsedDates.valid.length} date{parsedDates.valid.length > 1 ? 's' : ''} valide
-                {parsedDates.valid.length > 1 ? 's' : ''}.
+                {selectedDates.length} date{selectedDates.length > 1 ? 's' : ''} sélectionnée
+                {selectedDates.length > 1 ? 's' : ''}.
               </div>
-              {parsedDates.invalid.length > 0 ? (
-                <div className="text-sm text-rose-600">
-                  Lignes invalides: {parsedDates.invalid.join(', ')}
-                </div>
-              ) : null}
               {addDatesError ? (
                 <div className="text-sm text-rose-600">{addDatesError}</div>
               ) : null}
@@ -1300,7 +1271,7 @@ export default function AdminResidencyDetailPage({
                   className="btn"
                   onClick={() => {
                     setAddDatesOpen(false);
-                    setAddDatesRaw('');
+                    setSelectedDates([]);
                     setAddDatesError(null);
                     setAddDatesSuccess(null);
                   }}
@@ -1309,7 +1280,7 @@ export default function AdminResidencyDetailPage({
                 </button>
                 <button
                   className="btn btn-primary"
-                  disabled={addDatesLoading || parsedDates.valid.length === 0}
+                  disabled={addDatesLoading || selectedDates.length === 0}
                   onClick={addDates}
                 >
                   {addDatesLoading ? 'Ajout en cours…' : 'Ajouter'}
