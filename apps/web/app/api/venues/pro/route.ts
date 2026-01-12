@@ -86,7 +86,7 @@ export async function POST(req: Request) {
 
     if (vErr) {
       return NextResponse.json(
-        { ok: false, error: 'Impossible de lire l'établissement: ' + vErr.message },
+        { ok: false, error: "Impossible de lire l'établissement: " + vErr.message },
         { status: 500 }
       );
     }
