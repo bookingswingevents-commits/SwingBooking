@@ -117,21 +117,24 @@ type Proposal = {
   }[] | null;
 };
 
-type AdminCounts = {
-  programmations_actives: number;
-  programmations_ouvertes: number;
-  programmations_publiees: number;
-  demandes_ouvertes: number;
-  candidatures_en_attente: number;
-  artistes_confirmes_a_venir: number;
-  evenements_a_venir: number;
+type HighlightedResidency = {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  is_open: boolean | null;
+  is_public: boolean | null;
+  clientName?: string | null;
 };
 
-type AdminActionItem = {
-  title: string;
-  description: string;
+type ArtistHighlightedResidency = {
+  id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+  statusLabel: string;
+  clientName?: string | null;
   href: string;
-  count: number;
 };
 
 /* ================== Page ================== */
@@ -152,17 +155,12 @@ export default function DashboardPage() {
 
   // ARTIST
   const [artist, setArtist] = useState<ArtistMini | null>(null);
-  const [artistInvites, setArtistInvites] = useState<Invitation[]>([]);
-  const [artistUpcoming, setArtistUpcoming] = useState<BookingRequest[]>([]);
-  const [artistResidencyUpcoming, setArtistResidencyUpcoming] = useState<ResidencyUpcoming[]>([]);
-  const [artistResidencyCount, setArtistResidencyCount] = useState(0);
-  const [artistResidencyInvites, setArtistResidencyInvites] = useState<ResidencyInvitation[]>([]);
+  const [artistHighlighted, setArtistHighlighted] = useState<ArtistHighlightedResidency | null>(
+    null
+  );
 
   // ADMIN
-  const [adminRecentRequests, setAdminRecentRequests] = useState<BookingRequest[]>([]);
-  const [adminRecentProposals, setAdminRecentProposals] = useState<Proposal[]>([]);
-  const [adminCounts, setAdminCounts] = useState<AdminCounts | null>(null);
-  const [adminActions, setAdminActions] = useState<AdminActionItem[]>([]);
+  const [adminHighlighted, setAdminHighlighted] = useState<HighlightedResidency | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -277,11 +275,7 @@ export default function DashboardPage() {
         if (!artistId) {
           setLastError('Compte artiste non lié.');
           setArtist(null);
-          setArtistInvites([]);
-          setArtistUpcoming([]);
-          setArtistResidencyUpcoming([]);
-          setArtistResidencyCount(0);
-          setArtistResidencyInvites([]);
+          setArtistHighlighted(null);
           setLoading(false);
           return;
         }
@@ -295,111 +289,171 @@ export default function DashboardPage() {
           .maybeSingle();
         setArtist((a as ArtistMini) ?? null);
 
-        const { data: inv } = await supabase
-          .from('request_artists')
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const { data: confirmedApps } = await supabase
+          .from('residency_applications')
           .select(
-            `
-            id, request_id, status, created_at,
-            booking_requests(id, title, event_date, venue_address, formation, event_format)
-          `
+            'date, status, residencies(id, name, start_date, end_date, clients(name))'
           )
           .eq('artist_id', artistId)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        setArtistInvites(
-          (inv ?? []).map((row: any) => ({
-            ...row,
-            booking_requests: unwrap(row.booking_requests),
-          })) as Invitation[]
-        );
+          .eq('status', 'CONFIRMED')
+          .gte('date', todayStr)
+          .order('date', { ascending: true })
+          .limit(1);
 
-        const { data: upc } = await supabase
-          .from('booking_requests')
-          .select('id, title, status, event_date, created_at, event_format, formation')
-          .gte('event_date', new Date().toISOString().slice(0, 10))
-          .order('event_date', { ascending: true })
-          .limit(6);
-        setArtistUpcoming((upc ?? []) as BookingRequest[]);
-
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const { data: resBookings, error: resErr } = await supabase
+        const { data: confirmedWeeks, error: resErr } = await supabase
           .from('residency_weeks')
           .select(
-            'id, start_date_sun, end_date_sun, residencies(name, clients(name)), week_bookings!inner(artist_id, status)'
+            'id, start_date_sun, end_date_sun, residencies(id, name, start_date, end_date, clients(name)), week_bookings!inner(artist_id, status)'
           )
           .gte('end_date_sun', todayStr)
           .eq('week_bookings.artist_id', artistId)
           .eq('week_bookings.status', 'CONFIRMED')
           .order('start_date_sun', { ascending: true })
-          .limit(5);
+          .limit(1);
         if (resErr) {
           setLastError(resErr.message);
         }
-        setArtistResidencyUpcoming((resBookings ?? []) as unknown as ResidencyUpcoming[]);
+        const confirmedApp = confirmedApps?.[0] ?? null;
+        const confirmedWeek = confirmedWeeks?.[0] ?? null;
 
-        const { count } = await supabase
-          .from('residency_weeks')
-          .select('id, week_bookings!inner(artist_id, status)', { count: 'exact', head: true })
-          .gte('end_date_sun', todayStr)
-          .eq('week_bookings.artist_id', artistId)
-          .eq('week_bookings.status', 'CONFIRMED');
-        setArtistResidencyCount(count ?? (resBookings?.length ?? 0));
+        let highlighted: ArtistHighlightedResidency | null = null;
 
-        const inviteFilters = [`target_filter->>artist_id.eq.${artistId}`];
-        if (identity.email) {
-          inviteFilters.push(`target_filter->>artist_email.eq.${identity.email}`);
+        const pickClientName = (res: any) =>
+          Array.isArray(res?.clients) ? res?.clients[0]?.name : res?.clients?.name ?? null;
+
+        if (confirmedApp || confirmedWeek) {
+          const appDate = confirmedApp?.date;
+          const weekDate = confirmedWeek?.start_date_sun;
+          const useApp = confirmedApp && (!weekDate || (appDate && appDate <= weekDate));
+          if (useApp && confirmedApp) {
+            const res = unwrap(confirmedApp.residencies as any);
+            highlighted = {
+              id: res?.id ?? '',
+              name: res?.name ?? 'Programmation',
+              start_date: confirmedApp.date,
+              end_date: confirmedApp.date,
+              statusLabel: 'Confirmé',
+              clientName: pickClientName(res),
+              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
+            };
+          } else if (confirmedWeek) {
+            const res = unwrap(confirmedWeek.residencies as any);
+            highlighted = {
+              id: res?.id ?? '',
+              name: res?.name ?? 'Programmation',
+              start_date: confirmedWeek.start_date_sun,
+              end_date: confirmedWeek.end_date_sun,
+              statusLabel: 'Confirmé',
+              clientName: pickClientName(res),
+              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
+            };
+          }
         }
-        const { data: resInvites } = await supabase
-          .from('residency_invitations')
-          .select('id, token, status, sent_at, created_at, target_filter, residencies(id, name, clients(name))')
-          .or(inviteFilters.join(','))
-          .order('created_at', { ascending: false })
-          .limit(10);
-        setArtistResidencyInvites((resInvites ?? []) as unknown as ResidencyInvitation[]);
+
+        if (!highlighted) {
+          const { data: pendingApps } = await supabase
+            .from('residency_applications')
+            .select('date, status, residencies(id, name, start_date, end_date, clients(name))')
+            .eq('artist_id', artistId)
+            .eq('status', 'PENDING')
+            .gte('date', todayStr)
+            .order('date', { ascending: true })
+            .limit(1);
+          const pendingApp = pendingApps?.[0] ?? null;
+          if (pendingApp) {
+            const res = unwrap(pendingApp.residencies as any);
+            highlighted = {
+              id: res?.id ?? '',
+              name: res?.name ?? 'Programmation',
+              start_date: pendingApp.date,
+              end_date: pendingApp.date,
+              statusLabel: 'Candidature envoyée',
+              clientName: pickClientName(res),
+              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
+            };
+          }
+        }
+
+        if (!highlighted) {
+          const inviteFilters = [`target_filter->>artist_id.eq.${artistId}`];
+          if (identity.email) {
+            inviteFilters.push(`target_filter->>artist_email.eq.${identity.email}`);
+          }
+          const { data: resInvites } = await supabase
+            .from('residency_invitations')
+            .select(
+              'id, token, status, sent_at, created_at, target_filter, residencies(id, name, start_date, end_date, clients(name))'
+            )
+            .or(inviteFilters.join(','))
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const inv = resInvites?.[0] ?? null;
+          const res = unwrap(inv?.residencies as any);
+          if (inv && res?.id && res?.start_date && res?.end_date) {
+            highlighted = {
+              id: res.id,
+              name: res?.name ?? 'Programmation',
+              start_date: res?.start_date,
+              end_date: res?.end_date,
+              statusLabel: 'En attente',
+              clientName: pickClientName(res),
+              href: `/availability/${inv.token}`,
+            };
+          }
+        }
+
+        setArtistHighlighted(highlighted);
       }
 
       /* ====== ADMIN ====== */
       if (prof?.role === 'admin') {
-        const [reqs, props] = await Promise.all([
-          supabase
-            .from('booking_requests')
-            .select('id, title, status, event_date, created_at, event_format, formation')
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const { data: activeResidencies } = await supabase
+          .from('residencies')
+          .select('id, name, start_date, end_date, is_public, is_open, created_at, clients(name)')
+          .gte('end_date', todayStr)
+          .order('start_date', { ascending: true });
+
+        let highlighted: HighlightedResidency | null = null;
+        if (activeResidencies && activeResidencies.length > 0) {
+          const published = activeResidencies.filter((r: any) => r.is_public);
+          const pick = (published.length ? published : activeResidencies)[0] as any;
+          const clientName = Array.isArray(pick.clients)
+            ? pick.clients[0]?.name
+            : pick.clients?.name ?? null;
+          highlighted = {
+            id: pick.id,
+            name: pick.name,
+            start_date: pick.start_date,
+            end_date: pick.end_date,
+            is_open: pick.is_open,
+            is_public: pick.is_public,
+            clientName,
+          };
+        } else {
+          const { data: latest } = await supabase
+            .from('residencies')
+            .select('id, name, start_date, end_date, is_public, is_open, created_at, clients(name)')
             .order('created_at', { ascending: false })
-            .limit(20),
-          supabase
-            .from('proposals')
-            .select(
-              `
-              id,
-              status,
-              created_at,
-              booking_requests(id, title, event_date, event_format, formation),
-              artists(id, stage_name),
-              proposal_venue_responses(decision, created_at)
-            `
-            )
-            .order('created_at', { ascending: false })
-            .limit(20),
-        ]);
-        if (reqs?.data) setAdminRecentRequests(reqs.data as BookingRequest[]);
-        if (props?.data)
-          setAdminRecentProposals(
-            (props.data as any[]).map((p) => ({
-              ...p,
-              booking_requests: unwrap(p.booking_requests),
-              artists: unwrap(p.artists),
-            })) as Proposal[]
-          );
-        try {
-          const res = await fetch('/api/admin/dashboard', { credentials: 'include' });
-          const json = await res.json();
-          if (json.ok) {
-            setAdminCounts(json.counts as AdminCounts);
-            setAdminActions((json.actions as AdminActionItem[]) ?? []);
+            .limit(1);
+          const pick = latest?.[0] as any;
+          if (pick) {
+            const clientName = Array.isArray(pick.clients)
+              ? pick.clients[0]?.name
+              : pick.clients?.name ?? null;
+            highlighted = {
+              id: pick.id,
+              name: pick.name,
+              start_date: pick.start_date,
+              end_date: pick.end_date,
+              is_open: pick.is_open,
+              is_public: pick.is_public,
+              clientName,
+            };
           }
-        } catch (e) {
-          console.warn('[dashboard] admin metrics error', e);
         }
+        setAdminHighlighted(highlighted);
       }
 
       setLoading(false);
@@ -437,256 +491,91 @@ export default function DashboardPage() {
 
       {/* ======== ARTIST ======== */}
       {role === 'artist' && (
-        <section className="grid md:grid-cols-[2fr_1fr] gap-4">
-          <div className="space-y-6">
-            {lastError && lastError.includes('Compte artiste non lié') ? (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-                Compte artiste non lié. Contactez l’admin pour activer votre accès.
-                <div className="mt-2">
-                  <a href="mailto:contact@swingbooking.fr" className="underline">
-                    Contacter l’admin
-                  </a>
-                </div>
+        <section className="space-y-6">
+          {lastError && lastError.includes('Compte artiste non lié') ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
+              Compte artiste non lié. Contactez l’admin pour activer votre accès.
+              <div className="mt-2">
+                <a href="mailto:contact@swingbooking.fr" className="underline">
+                  Contacter l’admin
+                </a>
               </div>
-            ) : null}
-            <ArtistHeaderStats
-              invites={artistInvites}
-              upcoming={artistUpcoming}
-              residencyUpcomingCount={artistResidencyCount}
+            </div>
+          ) : null}
+
+          <div className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold">Tableau de bord artiste</h2>
+            </div>
+            <QuickLinks
+              items={[
+                { href: '/artist/calendar', label: 'Agenda' },
+                { href: '/artist/roadmaps', label: 'Feuilles de route' },
+                { href: '/artist/programmations', label: 'Programmations' },
+              ]}
             />
-            <div className="grid md:grid-cols-3 gap-3">
-              <KpiCard label="Invitations" value={artistInvites.length} />
-              <KpiCard label="Bookings à venir" value={artistUpcoming.length + artistResidencyCount} />
-              <KpiCard label="Résidences confirmées" value={artistResidencyCount} />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/artist/calendar" className="btn">
-                Agenda
-              </Link>
-              <Link href="/artist/roadmaps" className="btn">
-                Feuilles de route
-              </Link>
-              <Link href="/artist/programmations" className="btn">
-                Voir les programmations
-              </Link>
-            </div>
-
-            {/* Profil + prochains bookings */}
-            <section className="grid md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 border rounded-2xl p-4 space-y-3 bg-white">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-semibold">Mon profil artiste</h2>
-                  <Link href="/artist/profile" className="btn btn-primary">
-                    Modifier mon profil
-                  </Link>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <div className="font-medium">
-                      {artist?.stage_name || 'Nom de scène non renseigné'}
-                    </div>
-                    {artist?.is_active ? (
-                      <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
-                        Actif
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                        Inactif
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="text-sm text-slate-600">
-                    Formations :{' '}
-                    {artist?.formations?.length ? artist.formations.join(', ') : '—'}
-                  </div>
-
-                  <ProfileProgress artist={artist} />
-                </div>
-              </div>
-
-              {/* Prochains événements */}
-              <div className="border rounded-2xl p-4 space-y-2 bg-white">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold">Prochains événements</h3>
-                  <Link
-                    href="/artist/roadmaps"
-                    className="text-sm underline text-[var(--brand)]"
-                  >
-                    Feuilles de route
-                  </Link>
-                </div>
-                {artistUpcoming.length === 0 ? (
-                  <p className="text-sm text-slate-500">Aucun événement à venir.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {artistUpcoming.map((b) => (
-                      <li key={b.id} className="text-sm">
-                        <div className="font-medium">{b.title}</div>
-                        <div className="text-slate-600">
-                          {fmtDateFR(b.event_date)} • {labelForEventFormat(b.event_format)} •{' '}
-                          {statusFR(b.status)}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <div className="text-xs text-slate-500">
-                  (Affichera les prestations confirmées une fois le flux de propositions
-                  validé.)
-                </div>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border p-4 bg-white space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Prochains bookings</h3>
-                <Link href="/artist/programmations" className="text-sm underline text-[var(--brand)]">
-                  Voir toutes
-                </Link>
-              </div>
-              {artistResidencyUpcoming.length === 0 ? (
-                <p className="text-sm text-slate-500">Aucune résidence confirmée à venir.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {artistResidencyUpcoming.map((b) => {
-                    const res = b.residencies;
-                    const clientName = Array.isArray(res?.clients)
-                      ? res?.clients[0]?.name
-                      : (res as any)?.clients?.name ?? null;
-                    const resId = (res as any)?.id as string | undefined;
-                    return (
-                      <li key={b.id} className="text-sm flex items-center justify-between gap-2">
-                        <div>
-                          <div className="font-medium">
-                            {res?.name || 'Résidence'} • ✅ Confirmé
-                          </div>
-                          <div className="text-slate-600">
-                            {fmtDateFR(b.start_date_sun)} → {fmtDateFR(b.end_date_sun)}{' '}
-                            {clientName ? `• ${clientName}` : ''}
-                          </div>
-                        </div>
-                        {resId ? (
-                          <Link href={`/artist/programmations/${resId}`} className="btn">
-                            Voir
-                          </Link>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            <section className="space-y-3 border rounded-2xl p-4 bg-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Invitations reçues</h2>
-                <div className="text-sm text-slate-500">
-                  Réponds présent ou non aux demandes.
-                </div>
-              </div>
-
-              {artistInvites.length === 0 ? (
-                <p className="text-slate-500">Aucune invitation reçue.</p>
-              ) : (
-                <ul className="grid md:grid-cols-2 gap-4">
-                  {artistInvites.map((it) => {
-                    const req = it.booking_requests;
-                    return (
-                      <li
-                        key={it.id}
-                        className="border rounded-2xl p-4 space-y-2 hover:shadow-sm bg-white"
-                      >
-                        <Link
-                          href={`/artist/requests/${it.request_id}`}
-                          className="block group"
-                          title="Voir le détail de la demande"
-                        >
-                          <div className="font-medium group-hover:underline">
-                            {req?.title ?? 'Demande sans titre'}
-                          </div>
-                          <div className="text-sm text-slate-600">
-                            {fmtDateFR(req?.event_date)} •{' '}
-                            {labelForEventFormat(req?.event_format)} •{' '}
-                            {statusFR(it.status ?? 'invited')}
-                          </div>
-                          {req?.venue_address ? (
-                            <div className="text-xs text-slate-500">
-                              <span className="font-medium">Lieu :</span> {req.venue_address}
-                            </div>
-                          ) : null}
-                        </Link>
-
-                        <div className="flex gap-2 pt-1">
-                          <Link
-                            href={`/artist/requests/${it.request_id}`}
-                            className="px-3 py-1 rounded-lg border text-sm hover:bg-slate-50"
-                            title="Voir la demande complète"
-                          >
-                            Voir la demande
-                          </Link>
-                          <Link
-                            href={`/artist/requests/${it.request_id}#repondre`}
-                            className="px-3 py-1 rounded-lg border text-sm hover:bg-emerald-50"
-                            title="Répondre à l’invitation"
-                          >
-                            Répondre
-                          </Link>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
-
-            <section className="space-y-3 border rounded-2xl p-4 bg-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Invitations résidences</h2>
-                <div className="text-sm text-slate-500">Disponibilités en attente.</div>
-              </div>
-
-              {artistResidencyInvites.length === 0 ? (
-                <p className="text-slate-500">Aucune invitation résidence.</p>
-              ) : (
-                <ul className="grid md:grid-cols-2 gap-4">
-                  {artistResidencyInvites.map((inv) => {
-                    const res = inv.residencies;
-                    const tf = inv.target_filter || {};
-                    const clientName = Array.isArray(res?.clients)
-                      ? res?.clients[0]?.name
-                      : (res as any)?.clients?.name ?? null;
-                    return (
-                      <li key={inv.id} className="border rounded-2xl p-4 space-y-2 bg-white">
-                        <div className="font-medium">
-                          {res?.name || 'Résidence'} {clientName ? `• ${clientName}` : ''}
-                        </div>
-                        <div className="text-sm text-slate-600">
-                          Statut: {inv.status ?? 'sent'} • {tf.artist_email ?? '—'}
-                        </div>
-                        <Link
-                          href={`/availability/${inv.token}`}
-                          className="px-3 py-1 rounded-lg border text-sm hover:bg-slate-50 inline-flex"
-                        >
-                          Voir l’agenda
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </section>
           </div>
 
-          <div className="space-y-4 md:sticky md:top-4 self-start z-0">
-            <ActionsRequired
-              actions={computeActions({
-                role: 'artist',
-                invites: artistInvites as any,
-              })}
-            />
-            <NotesWidget />
+          <div className="grid md:grid-cols-3 gap-4">
+            <section className="md:col-span-2 rounded-2xl border bg-white p-5 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold">Programmation à suivre</h3>
+                {artistHighlighted ? (
+                  <Link href={artistHighlighted.href} className="btn btn-primary">
+                    Voir la programmation
+                  </Link>
+                ) : null}
+              </div>
+              {artistHighlighted ? (
+                <div className="space-y-1">
+                  <div className="text-lg font-semibold">{artistHighlighted.name}</div>
+                  <div className="text-sm text-slate-600">
+                    {artistHighlighted.clientName ? `${artistHighlighted.clientName} • ` : ''}
+                    {fmtDateFR(artistHighlighted.start_date)} →{' '}
+                    {fmtDateFR(artistHighlighted.end_date)}
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    Statut : {artistHighlighted.statusLabel}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-600">
+                  Aucune programmation active pour le moment.
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border p-4 space-y-3 bg-white">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">Mon profil artiste</h2>
+                <Link href="/artist/profile" className="btn btn-primary">
+                  Modifier mon profil
+                </Link>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <div className="font-medium">
+                    {artist?.stage_name || 'Nom de scène non renseigné'}
+                  </div>
+                  {artist?.is_active ? (
+                    <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                      Actif
+                    </span>
+                  ) : (
+                    <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                      Inactif
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-sm text-slate-600">
+                  Formations : {artist?.formations?.length ? artist.formations.join(', ') : '—'}
+                </div>
+
+                <ProfileProgress artist={artist} />
+              </div>
+            </section>
           </div>
         </section>
       )}
@@ -694,49 +583,50 @@ export default function DashboardPage() {
       {/* ======== ADMIN ======== */}
       {role === 'admin' && (
         <section className="space-y-6">
-          <AdminHeaderStats
-            requests={adminRecentRequests}
-            proposals={adminRecentProposals}
-          />
-          <div className="grid md:grid-cols-3 gap-3">
-            <KpiCard label="Programmations actives" value={adminCounts?.programmations_actives ?? 0} />
-            <KpiCard label="Programmations ouvertes" value={adminCounts?.programmations_ouvertes ?? 0} />
-            <KpiCard label="Programmations publiées" value={adminCounts?.programmations_publiees ?? 0} />
-          </div>
+          <section className="rounded-2xl border bg-white p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold">Programmation à suivre</h2>
+                {adminHighlighted ? (
+                  <div className="space-y-1">
+                    <div className="text-lg font-semibold">{adminHighlighted.name}</div>
+                    <div className="text-sm text-slate-600">
+                      {adminHighlighted.clientName ? `${adminHighlighted.clientName} • ` : ''}
+                      {fmtDateFR(adminHighlighted.start_date)} →{' '}
+                      {fmtDateFR(adminHighlighted.end_date)}
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      Statut : {adminHighlighted.is_open ? 'Ouverte' : 'Confirmée'}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-600">
+                    Aucune programmation pour le moment.
+                  </div>
+                )}
+              </div>
+              {adminHighlighted ? (
+                <Link href={`/admin/programmations/${adminHighlighted.id}`} className="btn btn-primary">
+                  Ouvrir la programmation
+                </Link>
+              ) : (
+                <Link href="/admin/programmations" className="btn btn-primary">
+                  Créer une programmation
+                </Link>
+              )}
+            </div>
+          </section>
 
-          <div className="grid md:grid-cols-3 gap-3">
-            <KpiCard label="Demandes ouvertes" value={adminCounts?.demandes_ouvertes ?? 0} />
-            <KpiCard label="Candidatures en attente" value={adminCounts?.candidatures_en_attente ?? 0} />
-            <KpiCard label="Artistes confirmés (à venir)" value={adminCounts?.artistes_confirmes_a_venir ?? 0} />
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-3">
-            <KpiCard
-              label="Événements (futurs)"
-              value={adminCounts?.evenements_a_venir ?? 0}
+          <section className="rounded-2xl border bg-white p-5 space-y-3">
+            <h3 className="text-lg font-semibold">Actions rapides</h3>
+            <QuickLinks
+              items={[
+                { href: '/admin/programmations', label: 'Créer une programmation' },
+                { href: '/admin/programmations', label: 'Voir toutes les programmations' },
+                { href: '/admin/calendar', label: 'Agenda' },
+              ]}
             />
-          </div>
-
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <ActionsRequired
-                actions={adminActions.map((a) => ({
-                  type: 'admin_action',
-                  title: `${a.title} (${a.count})`,
-                  description: a.description,
-                  href: a.href,
-                  priority: 1,
-                }))}
-              />
-              <AdminActivity
-                requests={adminRecentRequests}
-                proposals={adminRecentProposals}
-              />
-            </div>
-            <div className="md:col-span-1">
-              <NotesWidget />
-            </div>
-          </div>
+          </section>
         </section>
       )}
     </div>
