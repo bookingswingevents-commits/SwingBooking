@@ -117,6 +117,23 @@ type Proposal = {
   }[] | null;
 };
 
+type AdminCounts = {
+  programmations_actives: number;
+  programmations_ouvertes: number;
+  programmations_publiees: number;
+  demandes_ouvertes: number;
+  candidatures_en_attente: number;
+  artistes_confirmes_a_venir: number;
+  evenements_a_venir: number;
+};
+
+type AdminActionItem = {
+  title: string;
+  description: string;
+  href: string;
+  count: number;
+};
+
 /* ================== Page ================== */
 export default function DashboardPage() {
   const router = useRouter();
@@ -144,6 +161,8 @@ export default function DashboardPage() {
   // ADMIN
   const [adminRecentRequests, setAdminRecentRequests] = useState<BookingRequest[]>([]);
   const [adminRecentProposals, setAdminRecentProposals] = useState<Proposal[]>([]);
+  const [adminCounts, setAdminCounts] = useState<AdminCounts | null>(null);
+  const [adminActions, setAdminActions] = useState<AdminActionItem[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -371,6 +390,16 @@ export default function DashboardPage() {
               artists: unwrap(p.artists),
             })) as Proposal[]
           );
+        try {
+          const res = await fetch('/api/admin/dashboard', { credentials: 'include' });
+          const json = await res.json();
+          if (json.ok) {
+            setAdminCounts(json.counts as AdminCounts);
+            setAdminActions((json.actions as AdminActionItem[]) ?? []);
+          }
+        } catch (e) {
+          console.warn('[dashboard] admin metrics error', e);
+        }
       }
 
       setLoading(false);
@@ -670,22 +699,34 @@ export default function DashboardPage() {
             proposals={adminRecentProposals}
           />
           <div className="grid md:grid-cols-3 gap-3">
-            <KpiCard label="Demandes" value={adminRecentRequests.length} />
-            <KpiCard label="Propositions" value={adminRecentProposals.length} />
+            <KpiCard label="Programmations actives" value={adminCounts?.programmations_actives ?? 0} />
+            <KpiCard label="Programmations ouvertes" value={adminCounts?.programmations_ouvertes ?? 0} />
+            <KpiCard label="Programmations publiées" value={adminCounts?.programmations_publiees ?? 0} />
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
+            <KpiCard label="Demandes ouvertes" value={adminCounts?.demandes_ouvertes ?? 0} />
+            <KpiCard label="Candidatures en attente" value={adminCounts?.candidatures_en_attente ?? 0} />
+            <KpiCard label="Artistes confirmés (à venir)" value={adminCounts?.artistes_confirmes_a_venir ?? 0} />
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-3">
             <KpiCard
               label="Événements (futurs)"
-              value={adminRecentRequests.filter((r) => r.event_date && r.event_date >= new Date().toISOString().slice(0, 10)).length}
+              value={adminCounts?.evenements_a_venir ?? 0}
             />
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
             <div className="md:col-span-2">
               <ActionsRequired
-                actions={computeActions({
-                  role: 'admin',
-                  requests: adminRecentRequests,
-                  proposals: adminRecentProposals,
-                })}
+                actions={adminActions.map((a) => ({
+                  type: 'admin_action',
+                  title: `${a.title} (${a.count})`,
+                  description: a.description,
+                  href: a.href,
+                  priority: 1,
+                }))}
               />
               <AdminActivity
                 requests={adminRecentRequests}
