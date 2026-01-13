@@ -103,9 +103,9 @@ export async function POST(req: Request) {
     for (const p of profiles ?? []) {
       profById[p.id] = { email: p.email ?? null, full_name: p.full_name ?? null };
     }
-    const artistById: Record<string, { stage_name: string | null }> = {};
+    const artistById: Record<string, { stage_name: string | null; contact_email: string | null }> = {};
     for (const a of artists ?? []) {
-      artistById[a.id] = { stage_name: a.stage_name ?? null };
+      artistById[a.id] = { stage_name: a.stage_name ?? null, contact_email: a.contact_email ?? null };
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
