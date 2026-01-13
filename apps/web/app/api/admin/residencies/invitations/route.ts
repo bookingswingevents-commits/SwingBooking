@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { Resend } from 'resend';
 import { randomBytes } from 'crypto';
-import { emails as emailTemplates } from '@/lib/emails/templates';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
+import { notifyInvitationArtist } from '@/lib/notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,7 +60,7 @@ export async function POST(req: Request) {
 
     const { data: residency, error: resErr } = await supaSrv
       .from('residencies')
-      .select('id, name')
+      .select('id, name, start_date')
       .eq('id', residency_id)
       .maybeSingle();
     if (resErr || !residency) {
@@ -90,7 +89,10 @@ export async function POST(req: Request) {
     const uniqueArtistIds = Array.from(new Set(resolvedArtistIds));
 
     const { data: artists } = uniqueArtistIds.length
-      ? await supaSrv.from('artists').select('id, stage_name').in('id', uniqueArtistIds)
+      ? await supaSrv
+          .from('artists')
+          .select('id, stage_name, contact_email')
+          .in('id', uniqueArtistIds)
       : { data: [] as any[] };
 
     const { data: profiles } = uniqueArtistIds.length
@@ -107,10 +109,6 @@ export async function POST(req: Request) {
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const resendKey = process.env.RESEND_API_KEY;
-    const resend = resendKey ? new Resend(resendKey) : null;
-    const from = process.env.EMAIL_FROM || 'Swing Booking <noreply@swingbooking.com>';
-
     const results: Array<{
       id?: string;
       artist_id?: string;
@@ -124,7 +122,7 @@ export async function POST(req: Request) {
     for (const artist_id of uniqueArtistIds) {
       const meta = profById[artist_id];
       const artist = artistById[artist_id];
-      const email = meta?.email ?? null;
+      const email = meta?.email ?? artist?.contact_email ?? null;
       const stageName = artist?.stage_name ?? meta?.full_name ?? 'Artiste';
       const inviteToken = makeToken();
       const link = `${baseUrl}/availability/${inviteToken}`;
@@ -151,7 +149,7 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (!resend || !email) {
+      if (!email) {
         results.push({
           id: ins.id,
           artist_id,
@@ -165,11 +163,13 @@ export async function POST(req: Request) {
       }
 
       try {
-        await resend.emails.send({
-          from,
+        await notifyInvitationArtist({
           to: email,
-          subject: `Dispo residence: ${residency.name}`,
-          html: emailTemplates.residencyInvite(stageName, residency.name, link),
+          invitationId: ins.id,
+          artistName: stageName,
+          title: residency.name,
+          date: residency.start_date,
+          ctaUrl: link,
         });
         results.push({
           id: ins.id,

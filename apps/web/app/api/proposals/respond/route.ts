@@ -1,6 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { getPlanConfig } from '@/lib/plan';
+import {
+  notifyBookingConfirmedArtist,
+  notifyBookingConfirmedClient,
+  notifyRunSheetReady,
+} from '@/lib/notify';
 
 function getSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -70,7 +75,9 @@ export async function POST(req: Request) {
     // 2) Récupérer la demande + le plan de l'établissement
     const { data: reqRow, error: reqErr } = await supabase
       .from('booking_requests')
-      .select('id, venue_id, status, event_date')
+      .select(
+        'id, venue_id, status, event_date, title, venue_address, venue_contact_email, venue_contact_name, venue_contact_phone, venue_company_name'
+      )
       .eq('id', request_id)
       .maybeSingle();
 
@@ -278,6 +285,123 @@ export async function POST(req: Request) {
         ]);
       } catch (e: any) {
         console.warn('[proposals/respond] warn: itinerary insert failed', e?.message);
+      }
+    }
+
+    if (accept === true && reqRow?.status !== 'confirmed') {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.swingbooking.fr';
+      try {
+        const { data: artistRow } = await supabase
+          .from('artists')
+          .select('id, stage_name, contact_email, user_id')
+          .eq('id', prop.artist_id)
+          .maybeSingle();
+        let artistEmail: string | null = artistRow?.contact_email ?? null;
+        if (artistRow?.user_id) {
+          const { data: profRow } = await supabase
+            .from('profiles')
+            .select('email')
+            .eq('id', artistRow.user_id)
+            .maybeSingle();
+          artistEmail = profRow?.email ?? artistEmail;
+        }
+
+        const clientEmail = reqRow?.venue_contact_email ?? null;
+        const title = reqRow?.title || 'Prestation confirmée';
+        const address = reqRow?.venue_address || reqRow?.venue_company_name || null;
+        const date = reqRow?.event_date;
+
+        if (artistEmail && date) {
+          await notifyBookingConfirmedArtist({
+            to: artistEmail,
+            artistName: artistRow?.stage_name ?? null,
+            title,
+            date,
+            address,
+            fee: null,
+            ctaUrl: `${appUrl}/artist/requests/${request_id}`,
+            eventKey: `client_confirm:${prop.id}:artist`,
+            entityId: prop.id,
+          });
+        }
+
+        if (clientEmail && date) {
+          await notifyBookingConfirmedClient({
+            to: clientEmail,
+            clientName: reqRow?.venue_company_name ?? null,
+            title,
+            date,
+            address,
+            artistNames: artistRow?.stage_name ?? null,
+            ctaUrl: `${appUrl}/venue/requests/${request_id}`,
+            eventKey: `client_confirm:${prop.id}:client`,
+            entityId: prop.id,
+          });
+        }
+
+        const adminEmail = process.env.ADMIN_EMAIL || null;
+        if (adminEmail && date) {
+          await notifyBookingConfirmedClient({
+            to: adminEmail,
+            clientName: 'Administration',
+            title,
+            date,
+            address,
+            artistNames: artistRow?.stage_name ?? null,
+            ctaUrl: `${appUrl}/admin/requests/${request_id}`,
+            eventKey: `client_confirm:${prop.id}:admin`,
+            entityId: prop.id,
+          });
+        }
+
+        if (date) {
+          const contactLine = [
+            reqRow?.venue_contact_name ? `Contact : ${reqRow.venue_contact_name}` : null,
+            reqRow?.venue_contact_email ? reqRow.venue_contact_email : null,
+            reqRow?.venue_contact_phone ? reqRow.venue_contact_phone : null,
+          ]
+            .filter(Boolean)
+            .join(' • ');
+
+          if (artistEmail) {
+            await notifyRunSheetReady({
+              to: artistEmail,
+              title,
+              date,
+              address,
+              ctaUrl: `${appUrl}/artist/roadmaps/${request_id}`,
+              contactLine: contactLine || null,
+              eventKey: `runsheet:${prop.id}:artist`,
+              entityId: prop.id,
+            });
+          }
+          if (clientEmail) {
+            await notifyRunSheetReady({
+              to: clientEmail,
+              title,
+              date,
+              address,
+              ctaUrl: `${appUrl}/venue/roadmaps/${request_id}`,
+              contactLine: contactLine || null,
+              eventKey: `runsheet:${prop.id}:client`,
+              entityId: prop.id,
+            });
+          }
+          if (adminEmail) {
+            await notifyRunSheetReady({
+              to: adminEmail,
+              title,
+              date,
+              address,
+              ctaUrl: `${appUrl}/admin/requests/${request_id}`,
+              contactLine: contactLine || null,
+              eventKey: `runsheet:${prop.id}:admin`,
+              entityId: prop.id,
+            });
+          }
+        }
+      } catch (e: any) {
+        console.error('[proposals/respond] email error', e?.message);
       }
     }
 

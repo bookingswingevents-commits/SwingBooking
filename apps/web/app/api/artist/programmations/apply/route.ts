@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
+import { notifyArtistAppliedAdmin } from '@/lib/notify';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
     debug.step = 'artist_lookup';
     const { data: artistRow, error: artistErr } = await supabase
       .from('artists')
-      .select('id')
+      .select('id, stage_name, contact_email, user_id')
       .eq('user_id', user.id)
       .maybeSingle();
     if (artistErr || !artistRow?.id) {
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
     debug.step = 'residency_lookup';
     const { data: resRow, error: resErr } = await supabase
       .from('residencies')
-      .select('id, mode, is_public, is_open, start_date, end_date')
+      .select('id, name, mode, is_public, is_open, start_date, end_date, clients(name, contact_email)')
       .eq('id', residency_id)
       .maybeSingle();
     if (resErr || !resRow) {
@@ -148,6 +149,45 @@ export async function POST(req: Request) {
         { ok: false, error: 'Envoi de la candidature impossible.' },
         { status: 500 }
       );
+    }
+
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://app.swingbooking.fr';
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const artistName = artistRow.stage_name || 'Artiste';
+    const clientName = Array.isArray(resRow.clients)
+      ? resRow.clients[0]?.name
+      : (resRow.clients as any)?.name;
+    const clientEmail = Array.isArray(resRow.clients)
+      ? resRow.clients[0]?.contact_email
+      : (resRow.clients as any)?.contact_email;
+    const adminUrl = `${appUrl}/admin/programmations/${residency_id}`;
+
+    if (adminEmail) {
+      await notifyArtistAppliedAdmin({
+        to: adminEmail,
+        artistName,
+        title: resRow.name,
+        date,
+        adminUrl,
+        eventKey: `artist_apply:${residency_id}:${date}:${artistRow.id}:admin`,
+        residencyId: residency_id,
+      });
+    }
+    if (clientEmail) {
+      await notifyArtistAppliedAdmin({
+        to: clientEmail,
+        artistName,
+        title: resRow.name,
+        date,
+        adminUrl: `${appUrl}/dashboard`,
+        eventKey: `artist_apply:${residency_id}:${date}:${artistRow.id}:client`,
+        residencyId: residency_id,
+      });
+    } else {
+      console.error('[artist/programmations/apply] CLIENT_EMAIL_MISSING', {
+        residency_id,
+        clientName: clientName ?? null,
+      });
     }
 
     return NextResponse.json({ ok: true, status: 'PENDING' });

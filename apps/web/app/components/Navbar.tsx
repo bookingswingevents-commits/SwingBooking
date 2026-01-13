@@ -127,6 +127,14 @@ export default function Navbar() {
                   Clients
                 </Link>
               ) : null}
+              {role === 'admin' ? (
+                <Link
+                  href="/admin/emails"
+                  className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"
+                >
+                  Emails
+                </Link>
+              ) : null}
               <Link
                 href="/dashboard"
                 className="hidden sm:inline-flex items-center text-sm px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50"

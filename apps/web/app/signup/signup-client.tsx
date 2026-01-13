@@ -98,6 +98,15 @@ export default function SignupClientPage() {
           throw profErr;
         }
 
+        try {
+          await fetch('/api/notify/signup-confirmation', {
+            method: 'POST',
+            credentials: 'include',
+          });
+        } catch {
+          // Ne bloque pas l'inscription
+        }
+
         // 3) Si artiste → créer la fiche artiste minimale
         if (role === 'artist') {
           const { error: artErr } = await supabase
