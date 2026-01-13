@@ -9,6 +9,7 @@ type SendResult = {
   skipped_already_sent?: number;
   errors?: Array<{ artist_id: string; error: string }>;
   error?: string;
+  test_mode?: boolean;
 };
 
 type Formation = 'solo' | 'duo' | 'trio' | 'quartet' | 'dj';
