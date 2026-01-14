@@ -33,6 +33,7 @@ type WeekRow = {
   start_date_sun: string;
   end_date_sun: string;
   week_type?: 'calm' | 'strong' | null;
+  status?: string | null;
   residencies: {
     id: string;
     name: string;
@@ -81,7 +82,7 @@ export default function ArtistResidencyRoadmapPage() {
         const { data: booking } = await supabase
           .from('week_bookings')
           .select(
-            'id, status, residency_week_id, residency_weeks!inner(id, start_date_sun, end_date_sun, week_type, residencies(id, name, clients(name)))'
+            'id, status, residency_week_id, residency_weeks!inner(id, start_date_sun, end_date_sun, week_type, status, residencies(id, name, clients(name)))'
           )
           .eq('artist_id', identity.artistId)
           .eq('status', 'CONFIRMED')
@@ -90,6 +91,10 @@ export default function ArtistResidencyRoadmapPage() {
         const wk = booking?.residency_weeks?.[0] ?? null;
         if (!wk) {
           setError('Aucune feuille de route disponible pour cette semaine.');
+          return;
+        }
+        if (wk.status === 'CANCELLED') {
+          setError('Cette semaine a été annulée.');
           return;
         }
         setWeek(wk);

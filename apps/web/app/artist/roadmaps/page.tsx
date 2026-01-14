@@ -34,6 +34,7 @@ type ResidencyRoadmap = {
   start_date_sun: string;
   end_date_sun: string;
   week_type: 'calm' | 'strong';
+  week_status?: string | null;
   residency_id: string;
   residency_name: string;
   client_name?: string | null;
@@ -98,7 +99,7 @@ export default function ArtistRoadmapsPage() {
           const { data: weekBookings } = await supabase
             .from('week_bookings')
             .select(
-              'status, residency_week_id, residency_weeks(id, start_date_sun, end_date_sun, week_type, residency_id, residencies(id, name, clients(name)))'
+              'status, residency_week_id, residency_weeks(id, start_date_sun, end_date_sun, week_type, status, residency_id, residencies(id, name, clients(name)))'
             )
             .eq('artist_id', artistId)
             .eq('status', 'CONFIRMED')
@@ -109,13 +110,14 @@ export default function ArtistRoadmapsPage() {
               start_date_sun: row.residency_weeks?.start_date_sun,
               end_date_sun: row.residency_weeks?.end_date_sun,
               week_type: (row.residency_weeks?.week_type as 'calm' | 'strong') ?? 'calm',
+              week_status: row.residency_weeks?.status,
               residency_id: row.residency_weeks?.residency_id,
               residency_name: row.residency_weeks?.residencies?.name ?? 'Programmation',
               client_name: Array.isArray(row.residency_weeks?.residencies?.clients)
                 ? row.residency_weeks?.residencies?.clients?.[0]?.name
                 : row.residency_weeks?.residencies?.clients?.name ?? null,
             }))
-            .filter((r: any) => r.week_id && r.residency_id);
+            .filter((r: any) => r.week_id && r.residency_id && r.week_status !== 'CANCELLED');
 
           const residencyIds = Array.from(new Set(weekRows.map((r: any) => r.residency_id)));
           let templates: any[] = [];

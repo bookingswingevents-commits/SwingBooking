@@ -73,7 +73,7 @@ type ResidencyWeek = {
   type: 'CALM' | 'BUSY';
   performances_count: number;
   fee_cents: number;
-  status: 'OPEN' | 'CONFIRMED';
+  status: 'OPEN' | 'CONFIRMED' | 'CANCELLED';
   confirmed_booking_id: string | null;
   week_type?: 'calm' | 'strong' | null;
   week_applications?: WeekApplication[] | WeekApplication | null;
@@ -264,6 +264,52 @@ function defaultRoadmapTemplate(residencyId: string, weekType: 'calm' | 'strong'
   };
 }
 
+function l2aContent(): RoadmapContent {
+  return {
+    intro: 'Bienvenue à la résidence. Merci de vérifier les informations ci-dessous.',
+    contacts: [
+      { label: 'Julien', value: '06 08 90 65 79' },
+      { label: 'Nicolas', value: '06 84 54 29 57' },
+    ],
+    addresses: [
+      { label: 'Appartement', value: '4 Av. de la Muzelle, 38860 Les Deux Alpes' },
+    ],
+    access: [
+      { label: 'Clés', value: 'Réception Orée des Pistes' },
+      { label: 'Code', value: '1789' },
+      { label: 'Appartement', value: 'B326 (3e étage)' },
+    ],
+    lodging: [
+      { label: 'Linge', value: 'Draps propres à récupérer à Orée des Pistes' },
+      { label: 'Linge', value: 'Draps sales à ramener à Orée des Pistes' },
+    ],
+    meals: [
+      { label: 'Repas', value: 'Tous les soirs pour l’artiste + accompagnant' },
+    ],
+    schedule: [
+      {
+        day: 'Mercredi',
+        time: '18:30-19:30',
+        place: 'Orée des Pistes',
+        notes: 'Arrivée 17h • Repas • 20:30-21:30',
+      },
+      {
+        day: 'Samedi',
+        time: '21:00-23:00',
+        place: 'Les Crêtes',
+        notes: 'Arrivée 20h',
+      },
+    ],
+    logistics: [],
+    notes: '',
+  };
+}
+
+function isL2A(name?: string | null) {
+  const n = (name ?? '').toLowerCase();
+  return n.includes('l2a') || n.includes('les 2 alpes') || n.includes('les deux alpes');
+}
+
 function makeStrongFromCalm(calm: RoadmapTemplate, residencyId: string): RoadmapTemplate {
   const content = cloneRoadmapContent(calm.content ?? emptyRoadmapContent());
   const schedule = [...(content.schedule ?? [])];
@@ -339,6 +385,10 @@ export default function AdminResidencyDetailPage({
   const [roadmapLoading, setRoadmapLoading] = useState(false);
   const [roadmapError, setRoadmapError] = useState<string | null>(null);
   const [roadmapSuccess, setRoadmapSuccess] = useState<string | null>(null);
+  const [roadmapCopyFrom, setRoadmapCopyFrom] = useState<string>('');
+  const [roadmapResidencies, setRoadmapResidencies] = useState<Array<{ id: string; name: string }>>(
+    []
+  );
   const existingDates = useMemo(
     () => occurrences.map((occ) => occ.date).filter(Boolean).sort(),
     [occurrences]
@@ -415,7 +465,9 @@ export default function AdminResidencyDetailPage({
           .eq('residency_id', residencyId)
           .order('start_date_sun', { ascending: true });
         if (weeksRes.error) throw weeksRes.error;
-        const weekRows = (weeksRes.data as ResidencyWeek[]) ?? [];
+        const weekRows = ((weeksRes.data as ResidencyWeek[]) ?? []).filter(
+          (w) => w.status !== 'CANCELLED'
+        );
         setWeeks(weekRows);
         setOccurrences([]);
         const weekDates = weekRows.flatMap((w) =>
@@ -461,6 +513,18 @@ export default function AdminResidencyDetailPage({
         setRoadmapError(e?.message ?? 'Erreur chargement feuilles de route.');
       } finally {
         setRoadmapLoading(false);
+      }
+
+      const { data: allResidencies } = await supabase
+        .from('residencies')
+        .select('id, name')
+        .order('created_at', { ascending: false });
+      if (allResidencies) {
+        setRoadmapResidencies(
+          allResidencies
+            .filter((r) => r.id !== residencyId)
+            .map((r) => ({ id: r.id, name: r.name }))
+        );
       }
 
       setResidency(resRow);
@@ -861,7 +925,14 @@ export default function AdminResidencyDetailPage({
       if (weekType === 'strong' && prev.calm) {
         return { ...prev, strong: makeStrongFromCalm(prev.calm, residency.id) };
       }
-      return { ...prev, [weekType]: defaultRoadmapTemplate(residency.id, weekType) };
+      const base =
+        weekType === 'calm' && isL2A(residency.name)
+          ? {
+              ...defaultRoadmapTemplate(residency.id, weekType),
+              content: l2aContent(),
+            }
+          : defaultRoadmapTemplate(residency.id, weekType);
+      return { ...prev, [weekType]: base };
     });
   }
 
@@ -903,6 +974,38 @@ export default function AdminResidencyDetailPage({
       setRoadmapSuccess('Feuille de route enregistrée.');
     } catch (e: any) {
       setRoadmapError(e?.message ?? 'Erreur lors de l’enregistrement.');
+    } finally {
+      setRoadmapLoading(false);
+    }
+  }
+
+  async function duplicateRoadmapsFromResidency() {
+    if (!residency || !roadmapCopyFrom) return;
+    try {
+      setRoadmapLoading(true);
+      setRoadmapError(null);
+      const res = await fetch(
+        `/api/admin/roadmap-templates?residency_id=${encodeURIComponent(roadmapCopyFrom)}`,
+        { credentials: 'include' }
+      );
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || 'Duplication impossible.');
+      }
+      const templates = (json.templates ?? []) as RoadmapTemplate[];
+      const calm = templates.find((t) => t.week_type === 'calm');
+      const strong = templates.find((t) => t.week_type === 'strong');
+      setRoadmapDrafts({
+        calm: calm
+          ? { ...calm, residency_id: residency.id }
+          : defaultRoadmapTemplate(residency.id, 'calm'),
+        strong: strong
+          ? { ...strong, residency_id: residency.id }
+          : null,
+      });
+      setRoadmapSuccess('Feuilles de route dupliquées.');
+    } catch (e: any) {
+      setRoadmapError(e?.message ?? 'Duplication impossible.');
     } finally {
       setRoadmapLoading(false);
     }
@@ -1065,6 +1168,26 @@ export default function AdminResidencyDetailPage({
       await loadData();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de l\'annulation');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function cancelWeekSlot(weekId: string) {
+    if (!window.confirm('Supprimer ce créneau ?')) return;
+    try {
+      setActionLoading(true);
+      const res = await fetch('/api/admin/residencies/cancel-slot', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ week_id: weekId }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Suppression impossible');
+      await loadData();
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la suppression');
     } finally {
       setActionLoading(false);
     }
@@ -1392,6 +1515,30 @@ export default function AdminResidencyDetailPage({
             {roadmapSuccess}
           </div>
         ) : null}
+        <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
+          <div>
+            <label className="text-sm font-medium">Dupliquer depuis une autre résidence</label>
+            <select
+              className="border rounded-lg px-3 py-2 w-full"
+              value={roadmapCopyFrom}
+              onChange={(e) => setRoadmapCopyFrom(e.target.value)}
+            >
+              <option value="">Sélectionner une résidence</option>
+              {roadmapResidencies.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            className="btn"
+            onClick={duplicateRoadmapsFromResidency}
+            disabled={!roadmapCopyFrom || roadmapLoading}
+          >
+            Dupliquer
+          </button>
+        </div>
         <div className="grid md:grid-cols-2 gap-4">
           <RoadmapEditorCard
             weekType="calm"
@@ -1401,6 +1548,11 @@ export default function AdminResidencyDetailPage({
             onUpdateTitle={(title) => updateRoadmapTitle('calm', title)}
             onUpdateContent={(updater) => updateRoadmapContent('calm', updater)}
             loading={roadmapLoading}
+            createLabel={
+              isL2A(residency?.name)
+                ? 'Créer la feuille semaine calme (modèle L2A)'
+                : 'Créer la feuille semaine calme'
+            }
           />
           <RoadmapEditorCard
             weekType="strong"
@@ -1410,6 +1562,11 @@ export default function AdminResidencyDetailPage({
             onUpdateTitle={(title) => updateRoadmapTitle('strong', title)}
             onUpdateContent={(updater) => updateRoadmapContent('strong', updater)}
             loading={roadmapLoading}
+            createLabel={
+              roadmapDrafts.calm
+                ? 'Dupliquer semaine calme (+2 after-ski)'
+                : 'Créer la feuille semaine forte'
+            }
           />
         </div>
       </section>
@@ -1886,6 +2043,19 @@ export default function AdminResidencyDetailPage({
                     Annuler la confirmation
                   </button>
                 ) : null}
+                {w.status !== 'CONFIRMED' ? (
+                  <button
+                    className="btn"
+                    onClick={() => cancelWeekSlot(w.id)}
+                    disabled={actionLoading}
+                  >
+                    Supprimer le créneau
+                  </button>
+                ) : (
+                  <button className="btn" disabled>
+                    Supprimer le créneau
+                  </button>
+                )}
               </div>
             );
           })}
@@ -1958,6 +2128,7 @@ function RoadmapEditorCard({
   onUpdateTitle,
   onUpdateContent,
   loading,
+  createLabel,
 }: {
   weekType: 'calm' | 'strong';
   template: RoadmapTemplate | null;
@@ -1966,6 +2137,7 @@ function RoadmapEditorCard({
   onUpdateTitle: (title: string) => void;
   onUpdateContent: (updater: (content: RoadmapContent) => RoadmapContent) => void;
   loading: boolean;
+  createLabel: string;
 }) {
   const label = weekType === 'strong' ? 'Semaine forte' : 'Semaine calme';
 
@@ -1977,7 +2149,7 @@ function RoadmapEditorCard({
           Aucune feuille de route pour cette semaine.
         </p>
         <button className="btn btn-primary" onClick={onCreate}>
-          Créer la feuille {label.toLowerCase()}
+          {createLabel}
         </button>
       </div>
     );
