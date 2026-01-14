@@ -75,6 +75,7 @@ type ResidencyWeek = {
   fee_cents: number;
   status: 'OPEN' | 'CONFIRMED';
   confirmed_booking_id: string | null;
+  week_type?: 'calm' | 'strong' | null;
   week_applications?: WeekApplication[] | WeekApplication | null;
   week_bookings?: WeekBooking[] | WeekBooking | null;
 };
@@ -85,6 +86,29 @@ type ResidencyOccurrence = {
   start_time: string | null;
   end_time: string | null;
   notes: string | null;
+};
+
+type RoadmapEntry = { label: string; value: string };
+type RoadmapScheduleEntry = { day: string; time: string; place: string; notes?: string };
+
+type RoadmapContent = {
+  intro?: string;
+  contacts?: RoadmapEntry[];
+  addresses?: RoadmapEntry[];
+  access?: RoadmapEntry[];
+  lodging?: RoadmapEntry[];
+  meals?: RoadmapEntry[];
+  schedule?: RoadmapScheduleEntry[];
+  logistics?: RoadmapEntry[];
+  notes?: string;
+};
+
+type RoadmapTemplate = {
+  id?: string;
+  residency_id: string;
+  week_type: 'calm' | 'strong';
+  title: string;
+  content: RoadmapContent;
 };
 
 type ResidencyApplication = {
@@ -203,6 +227,68 @@ function enumerateDates(startDate: string, endDate: string) {
   return dates;
 }
 
+function emptyRoadmapContent(): RoadmapContent {
+  return {
+    intro: '',
+    contacts: [],
+    addresses: [],
+    access: [],
+    lodging: [],
+    meals: [],
+    schedule: [],
+    logistics: [],
+    notes: '',
+  };
+}
+
+function cloneRoadmapContent(content: RoadmapContent): RoadmapContent {
+  return {
+    intro: content.intro ?? '',
+    contacts: [...(content.contacts ?? [])],
+    addresses: [...(content.addresses ?? [])],
+    access: [...(content.access ?? [])],
+    lodging: [...(content.lodging ?? [])],
+    meals: [...(content.meals ?? [])],
+    schedule: [...(content.schedule ?? [])],
+    logistics: [...(content.logistics ?? [])],
+    notes: content.notes ?? '',
+  };
+}
+
+function defaultRoadmapTemplate(residencyId: string, weekType: 'calm' | 'strong'): RoadmapTemplate {
+  return {
+    residency_id: residencyId,
+    week_type: weekType,
+    title: weekType === 'strong' ? 'Semaine forte' : 'Semaine calme',
+    content: emptyRoadmapContent(),
+  };
+}
+
+function makeStrongFromCalm(calm: RoadmapTemplate, residencyId: string): RoadmapTemplate {
+  const content = cloneRoadmapContent(calm.content ?? emptyRoadmapContent());
+  const schedule = [...(content.schedule ?? [])];
+  schedule.push(
+    {
+      day: 'Mardi',
+      time: '16:00-17:30',
+      place: 'Hôtel Belambra Orée des pistes',
+      notes: 'After-ski',
+    },
+    {
+      day: 'Vendredi',
+      time: '16:00-17:30',
+      place: 'Hôtel Belambra Orée des pistes',
+      notes: 'After-ski',
+    }
+  );
+  return {
+    residency_id: residencyId,
+    week_type: 'strong',
+    title: 'Semaine forte',
+    content: { ...content, schedule },
+  };
+}
+
 export default function AdminResidencyDetailPage({
   params,
 }: {
@@ -246,6 +332,13 @@ export default function AdminResidencyDetailPage({
   const [addDatesError, setAddDatesError] = useState<string | null>(null);
   const [addDatesSuccess, setAddDatesSuccess] = useState<string | null>(null);
   const [addDatesLoading, setAddDatesLoading] = useState(false);
+  const [roadmapDrafts, setRoadmapDrafts] = useState<{
+    calm: RoadmapTemplate | null;
+    strong: RoadmapTemplate | null;
+  }>({ calm: null, strong: null });
+  const [roadmapLoading, setRoadmapLoading] = useState(false);
+  const [roadmapError, setRoadmapError] = useState<string | null>(null);
+  const [roadmapSuccess, setRoadmapSuccess] = useState<string | null>(null);
   const existingDates = useMemo(
     () => occurrences.map((occ) => occ.date).filter(Boolean).sort(),
     [occurrences]
@@ -317,7 +410,7 @@ export default function AdminResidencyDetailPage({
         const weeksRes = await supabase
           .from('residency_weeks')
           .select(
-            'id, start_date_sun, end_date_sun, type, performances_count, fee_cents, status, confirmed_booking_id, week_applications(id, artist_id, status, created_at, artists(stage_name)), week_bookings(id, artist_id, status, artists(stage_name))'
+            'id, start_date_sun, end_date_sun, type, week_type, performances_count, fee_cents, status, confirmed_booking_id, week_applications(id, artist_id, status, created_at, artists(stage_name)), week_bookings(id, artist_id, status, artists(stage_name))'
           )
           .eq('residency_id', residencyId)
           .order('start_date_sun', { ascending: true });
@@ -329,6 +422,45 @@ export default function AdminResidencyDetailPage({
           enumerateDates(w.start_date_sun, w.end_date_sun)
         );
         datesInRes = weekDates;
+      }
+
+      setRoadmapLoading(true);
+      setRoadmapError(null);
+      setRoadmapSuccess(null);
+      try {
+        const res = await fetch(`/api/admin/roadmap-templates?residency_id=${encodeURIComponent(residencyId)}`, {
+          credentials: 'include',
+        });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) {
+          throw new Error(json?.error || 'Erreur chargement feuilles de route.');
+        }
+        const templates = (json.templates ?? []) as RoadmapTemplate[];
+        const normalize = (t: RoadmapTemplate): RoadmapTemplate => ({
+          ...t,
+          title: t.title || (t.week_type === 'strong' ? 'Semaine forte' : 'Semaine calme'),
+          content: {
+            ...emptyRoadmapContent(),
+            ...(t.content ?? {}),
+            contacts: t.content?.contacts ?? [],
+            addresses: t.content?.addresses ?? [],
+            access: t.content?.access ?? [],
+            lodging: t.content?.lodging ?? [],
+            meals: t.content?.meals ?? [],
+            schedule: t.content?.schedule ?? [],
+            logistics: t.content?.logistics ?? [],
+          },
+        });
+        const calm = templates.find((t) => t.week_type === 'calm');
+        const strong = templates.find((t) => t.week_type === 'strong');
+        setRoadmapDrafts({
+          calm: calm ? normalize(calm) : null,
+          strong: strong ? normalize(strong) : null,
+        });
+      } catch (e: any) {
+        setRoadmapError(e?.message ?? 'Erreur chargement feuilles de route.');
+      } finally {
+        setRoadmapLoading(false);
       }
 
       setResidency(resRow);
@@ -617,8 +749,8 @@ export default function AdminResidencyDetailPage({
       setActionLoading(true);
       const payload =
         type === 'BUSY'
-          ? { type, performances_count: 4, fee_cents: 30000 }
-          : { type, performances_count: 2, fee_cents: 15000 };
+          ? { type, performances_count: 4, fee_cents: 30000, week_type: 'strong' }
+          : { type, performances_count: 2, fee_cents: 15000, week_type: 'calm' };
       const { error: upErr } = await supabase
         .from('residency_weeks')
         .update(payload)
@@ -718,6 +850,87 @@ export default function AdminResidencyDetailPage({
     } finally {
       setActionLoading(false);
     }
+  }
+
+  function ensureRoadmapDraft(weekType: 'calm' | 'strong') {
+    if (!residency) return;
+    setRoadmapSuccess(null);
+    setRoadmapError(null);
+    setRoadmapDrafts((prev) => {
+      if (prev[weekType]) return prev;
+      if (weekType === 'strong' && prev.calm) {
+        return { ...prev, strong: makeStrongFromCalm(prev.calm, residency.id) };
+      }
+      return { ...prev, [weekType]: defaultRoadmapTemplate(residency.id, weekType) };
+    });
+  }
+
+  async function saveRoadmapTemplate(weekType: 'calm' | 'strong') {
+    if (!residency) return;
+    const tmpl = roadmapDrafts[weekType];
+    if (!tmpl) {
+      setRoadmapError('Aucune feuille à enregistrer.');
+      return;
+    }
+    try {
+      setRoadmapLoading(true);
+      setRoadmapError(null);
+      const res = await fetch('/api/admin/roadmap-templates', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          residency_id: residency.id,
+          week_type: weekType,
+          title: tmpl.title,
+          content: tmpl.content,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || 'Enregistrement impossible.');
+      }
+      setRoadmapDrafts((prev) => ({
+        ...prev,
+        [weekType]: {
+          ...(json.template as RoadmapTemplate),
+          content: {
+            ...emptyRoadmapContent(),
+            ...(json.template?.content ?? {}),
+          },
+        },
+      }));
+      setRoadmapSuccess('Feuille de route enregistrée.');
+    } catch (e: any) {
+      setRoadmapError(e?.message ?? 'Erreur lors de l’enregistrement.');
+    } finally {
+      setRoadmapLoading(false);
+    }
+  }
+
+  function updateRoadmapContent(
+    weekType: 'calm' | 'strong',
+    updater: (content: RoadmapContent) => RoadmapContent
+  ) {
+    setRoadmapDrafts((prev) => {
+      const tmpl = prev[weekType];
+      if (!tmpl) return prev;
+      return {
+        ...prev,
+        [weekType]: {
+          ...tmpl,
+          content: updater(tmpl.content ?? emptyRoadmapContent()),
+        },
+      };
+    });
+  }
+
+  function updateRoadmapTitle(weekType: 'calm' | 'strong', title: string) {
+    setRoadmapDrafts((prev) => {
+      const tmpl = prev[weekType];
+      if (!tmpl) return prev;
+      return { ...prev, [weekType]: { ...tmpl, title } };
+    });
   }
 
   async function saveAddress() {
@@ -1152,16 +1365,53 @@ export default function AdminResidencyDetailPage({
             {success}
           </div>
         ) : null}
-        {isEditingConditions ? (
-          <div className="flex flex-wrap gap-2">
-            <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
-              Enregistrer
-            </button>
-            <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
-              Annuler
-            </button>
+      {isEditingConditions ? (
+        <div className="flex flex-wrap gap-2">
+          <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
+            Enregistrer
+          </button>
+          <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
+            Annuler
+          </button>
+        </div>
+      ) : null}
+    </section>
+
+      <section className="rounded-xl border p-4 space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Feuilles de route</h2>
+          {roadmapLoading ? <span className="text-xs text-slate-500">Chargement…</span> : null}
+        </div>
+        {roadmapError ? (
+          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
+            {roadmapError}
           </div>
         ) : null}
+        {roadmapSuccess ? (
+          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+            {roadmapSuccess}
+          </div>
+        ) : null}
+        <div className="grid md:grid-cols-2 gap-4">
+          <RoadmapEditorCard
+            weekType="calm"
+            template={roadmapDrafts.calm}
+            onCreate={() => ensureRoadmapDraft('calm')}
+            onSave={() => saveRoadmapTemplate('calm')}
+            onUpdateTitle={(title) => updateRoadmapTitle('calm', title)}
+            onUpdateContent={(updater) => updateRoadmapContent('calm', updater)}
+            loading={roadmapLoading}
+          />
+          <RoadmapEditorCard
+            weekType="strong"
+            template={roadmapDrafts.strong}
+            onCreate={() => ensureRoadmapDraft('strong')}
+            onSave={() => saveRoadmapTemplate('strong')}
+            onUpdateTitle={(title) => updateRoadmapTitle('strong', title)}
+            onUpdateContent={(updater) => updateRoadmapContent('strong', updater)}
+            loading={roadmapLoading}
+          />
+        </div>
       </section>
 
       <section className="rounded-xl border p-4 space-y-3">
@@ -1696,6 +1946,231 @@ export default function AdminResidencyDetailPage({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function RoadmapEditorCard({
+  weekType,
+  template,
+  onCreate,
+  onSave,
+  onUpdateTitle,
+  onUpdateContent,
+  loading,
+}: {
+  weekType: 'calm' | 'strong';
+  template: RoadmapTemplate | null;
+  onCreate: () => void;
+  onSave: () => void;
+  onUpdateTitle: (title: string) => void;
+  onUpdateContent: (updater: (content: RoadmapContent) => RoadmapContent) => void;
+  loading: boolean;
+}) {
+  const label = weekType === 'strong' ? 'Semaine forte' : 'Semaine calme';
+
+  if (!template) {
+    return (
+      <div className="rounded-xl border p-4 space-y-2 bg-white">
+        <div className="font-semibold">{label}</div>
+        <p className="text-sm text-slate-600">
+          Aucune feuille de route pour cette semaine.
+        </p>
+        <button className="btn btn-primary" onClick={onCreate}>
+          Créer la feuille {label.toLowerCase()}
+        </button>
+      </div>
+    );
+  }
+
+  const content = template.content ?? emptyRoadmapContent();
+
+  return (
+    <div className="rounded-xl border p-4 space-y-3 bg-white">
+      <div className="flex items-center justify-between gap-3">
+        <div className="font-semibold">{label}</div>
+        <button className="btn btn-primary" onClick={onSave} disabled={loading}>
+          Enregistrer
+        </button>
+      </div>
+      <input
+        className="border rounded-lg px-3 py-2 text-sm"
+        placeholder="Titre"
+        value={template.title}
+        onChange={(e) => onUpdateTitle(e.target.value)}
+      />
+      <textarea
+        className="border rounded-lg px-3 py-2 text-sm"
+        placeholder="Introduction"
+        value={content.intro ?? ''}
+        onChange={(e) =>
+          onUpdateContent((prev) => ({
+            ...prev,
+            intro: e.target.value,
+          }))
+        }
+      />
+      <EntryListEditor
+        title="Contacts"
+        items={content.contacts ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, contacts: items }))}
+      />
+      <EntryListEditor
+        title="Adresses"
+        items={content.addresses ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, addresses: items }))}
+      />
+      <EntryListEditor
+        title="Accès"
+        items={content.access ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, access: items }))}
+      />
+      <EntryListEditor
+        title="Logement"
+        items={content.lodging ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, lodging: items }))}
+      />
+      <EntryListEditor
+        title="Repas"
+        items={content.meals ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, meals: items }))}
+      />
+      <ScheduleEditor
+        items={content.schedule ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, schedule: items }))}
+      />
+      <EntryListEditor
+        title="Logistique"
+        items={content.logistics ?? []}
+        onChange={(items) => onUpdateContent((prev) => ({ ...prev, logistics: items }))}
+      />
+      <textarea
+        className="border rounded-lg px-3 py-2 text-sm"
+        placeholder="Notes"
+        value={content.notes ?? ''}
+        onChange={(e) =>
+          onUpdateContent((prev) => ({
+            ...prev,
+            notes: e.target.value,
+          }))
+        }
+      />
+    </div>
+  );
+}
+
+function EntryListEditor({
+  title,
+  items,
+  onChange,
+}: {
+  title: string;
+  items: RoadmapEntry[];
+  onChange: (items: RoadmapEntry[]) => void;
+}) {
+  const update = (idx: number, key: 'label' | 'value', value: string) => {
+    const next = items.map((it, i) => (i === idx ? { ...it, [key]: value } : it));
+    onChange(next);
+  };
+  const add = () => onChange([...items, { label: '', value: '' }]);
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium">{title}</div>
+        <button className="btn" type="button" onClick={add}>
+          Ajouter
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-xs text-slate-500">Aucune information.</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it, idx) => (
+            <div key={`${title}-${idx}`} className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
+              <input
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="Libellé"
+                value={it.label}
+                onChange={(e) => update(idx, 'label', e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="Valeur"
+                value={it.value}
+                onChange={(e) => update(idx, 'value', e.target.value)}
+              />
+              <button className="btn" type="button" onClick={() => remove(idx)}>
+                Supprimer
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleEditor({
+  items,
+  onChange,
+}: {
+  items: RoadmapScheduleEntry[];
+  onChange: (items: RoadmapScheduleEntry[]) => void;
+}) {
+  const update = (idx: number, key: keyof RoadmapScheduleEntry, value: string) => {
+    const next = items.map((it, i) => (i === idx ? { ...it, [key]: value } : it));
+    onChange(next);
+  };
+  const add = () => onChange([...items, { day: '', time: '', place: '', notes: '' }]);
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-medium">Planning</div>
+        <button className="btn" type="button" onClick={add}>
+          Ajouter une date
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-xs text-slate-500">Aucun créneau.</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it, idx) => (
+            <div key={`schedule-${idx}`} className="grid gap-2 md:grid-cols-[1fr_1fr_2fr_auto]">
+              <input
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="Jour"
+                value={it.day}
+                onChange={(e) => update(idx, 'day', e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="Horaire"
+                value={it.time}
+                onChange={(e) => update(idx, 'time', e.target.value)}
+              />
+              <input
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="Lieu / notes"
+                value={it.place}
+                onChange={(e) => update(idx, 'place', e.target.value)}
+              />
+              <button className="btn" type="button" onClick={() => remove(idx)}>
+                Supprimer
+              </button>
+              <input
+                className="border rounded-lg px-3 py-2 text-sm md:col-span-4"
+                placeholder="Notes"
+                value={it.notes ?? ''}
+                onChange={(e) => update(idx, 'notes', e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -124,6 +124,7 @@ export async function POST(req: Request) {
           ...w,
           fee_cents,
           residency_id: residency.id,
+          week_type: w.type === 'BUSY' ? 'strong' : 'calm',
         };
       });
       if (weekRows.some((row) => !row)) {
