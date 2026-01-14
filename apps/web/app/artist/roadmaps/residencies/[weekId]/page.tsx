@@ -87,7 +87,7 @@ export default function ArtistResidencyRoadmapPage() {
           .eq('status', 'CONFIRMED')
           .eq('residency_week_id', weekId)
           .maybeSingle();
-        const wk = (booking?.residency_weeks?.[0] as WeekRow | null) ?? null;
+        const wk = booking?.residency_weeks?.[0] ?? null;
         if (!wk) {
           setError('Aucune feuille de route disponible pour cette semaine.');
           return;
