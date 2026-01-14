@@ -122,9 +122,15 @@ type HighlightedResidency = {
   name: string;
   start_date: string;
   end_date: string;
+  mode: 'RANGE' | 'DATES';
   is_open: boolean | null;
   is_public: boolean | null;
   clientName?: string | null;
+  periodLabel: string;
+  totalCount: number;
+  confirmedCount: number;
+  pendingCount: number;
+  emptyCount: number;
 };
 
 type ArtistHighlightedResidency = {
@@ -132,9 +138,17 @@ type ArtistHighlightedResidency = {
   name: string;
   start_date: string;
   end_date: string;
+  mode: 'RANGE' | 'DATES';
   statusLabel: string;
   clientName?: string | null;
   href: string;
+  periodLabel: string;
+};
+
+type ArtistNextDate = {
+  key: string;
+  label: string;
+  status: string;
 };
 
 /* ================== Page ================== */
@@ -158,9 +172,15 @@ export default function DashboardPage() {
   const [artistHighlighted, setArtistHighlighted] = useState<ArtistHighlightedResidency | null>(
     null
   );
+  const [artistNextDates, setArtistNextDates] = useState<ArtistNextDate[]>([]);
+  const [artistInvites, setArtistInvites] = useState<Invitation[]>([]);
+  const [artistProposals, setArtistProposals] = useState<Proposal[]>([]);
 
   // ADMIN
   const [adminHighlighted, setAdminHighlighted] = useState<HighlightedResidency | null>(null);
+  const [adminRequests, setAdminRequests] = useState<BookingRequest[]>([]);
+  const [adminProposals, setAdminProposals] = useState<Proposal[]>([]);
+  const [adminResidencyList, setAdminResidencyList] = useState<HighlightedResidency[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -276,6 +296,9 @@ export default function DashboardPage() {
           setLastError('Compte artiste non lié.');
           setArtist(null);
           setArtistHighlighted(null);
+          setArtistNextDates([]);
+          setArtistInvites([]);
+          setArtistProposals([]);
           setLoading(false);
           return;
         }
@@ -289,72 +312,81 @@ export default function DashboardPage() {
           .maybeSingle();
         setArtist((a as ArtistMini) ?? null);
 
+        const { data: inv, error: invErr } = await supabase
+          .from('request_artists')
+          .select('request_id, status, booking_requests(id, title, formation)')
+          .eq('artist_id', artistId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (invErr) {
+          setLastError(`Invitations : ${invErr.message}`);
+        }
+        setArtistInvites(
+          (inv ?? []).map((row: any) => ({
+            ...row,
+            booking_requests: unwrap(row.booking_requests),
+          })) as Invitation[]
+        );
+
+        const { data: props, error: propErr } = await supabase
+          .from('proposals')
+          .select('id, status, request_id, booking_requests(id, title)')
+          .eq('artist_id', artistId)
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (propErr) {
+          setLastError(`Propositions : ${propErr.message}`);
+        }
+        setArtistProposals(
+          (props ?? []).map((p: any) => ({
+            ...p,
+            booking_requests: unwrap(p.booking_requests),
+          })) as Proposal[]
+        );
+
         const todayStr = new Date().toISOString().slice(0, 10);
+        const pickClientName = (res: any) =>
+          Array.isArray(res?.clients) ? res?.clients[0]?.name : res?.clients?.name ?? null;
+
+        let highlighted: ArtistHighlightedResidency | null = null;
+        let residencyId: string | null = null;
+
         const { data: confirmedApps } = await supabase
           .from('residency_applications')
           .select(
-            'date, status, residencies(id, name, start_date, end_date, clients(name))'
+            'date, status, residencies(id, name, start_date, end_date, mode, clients(name))'
           )
           .eq('artist_id', artistId)
           .eq('status', 'CONFIRMED')
           .gte('date', todayStr)
           .order('date', { ascending: true })
           .limit(1);
-
-        const { data: confirmedWeeks, error: resErr } = await supabase
-          .from('residency_weeks')
-          .select(
-            'id, start_date_sun, end_date_sun, residencies(id, name, start_date, end_date, clients(name)), week_bookings!inner(artist_id, status)'
-          )
-          .gte('end_date_sun', todayStr)
-          .eq('week_bookings.artist_id', artistId)
-          .eq('week_bookings.status', 'CONFIRMED')
-          .order('start_date_sun', { ascending: true })
-          .limit(1);
-        if (resErr) {
-          setLastError(resErr.message);
-        }
         const confirmedApp = confirmedApps?.[0] ?? null;
-        const confirmedWeek = confirmedWeeks?.[0] ?? null;
 
-        let highlighted: ArtistHighlightedResidency | null = null;
-
-        const pickClientName = (res: any) =>
-          Array.isArray(res?.clients) ? res?.clients[0]?.name : res?.clients?.name ?? null;
-
-        if (confirmedApp || confirmedWeek) {
-          const appDate = confirmedApp?.date;
-          const weekDate = confirmedWeek?.start_date_sun;
-          const useApp = confirmedApp && (!weekDate || (appDate && appDate <= weekDate));
-          if (useApp && confirmedApp) {
-            const res = unwrap(confirmedApp.residencies as any);
+        if (confirmedApp) {
+          const res = unwrap(confirmedApp.residencies as any);
+          if (res?.id) {
             highlighted = {
-              id: res?.id ?? '',
+              id: res.id,
               name: res?.name ?? 'Programmation',
-              start_date: confirmedApp.date,
-              end_date: confirmedApp.date,
+              start_date: res?.start_date ?? confirmedApp.date,
+              end_date: res?.end_date ?? confirmedApp.date,
+              mode: res?.mode ?? 'DATES',
               statusLabel: 'Confirmé',
               clientName: pickClientName(res),
-              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
+              href: `/artist/programmations/${res.id}`,
+              periodLabel: '',
             };
-          } else if (confirmedWeek) {
-            const res = unwrap(confirmedWeek.residencies as any);
-            highlighted = {
-              id: res?.id ?? '',
-              name: res?.name ?? 'Programmation',
-              start_date: confirmedWeek.start_date_sun,
-              end_date: confirmedWeek.end_date_sun,
-              statusLabel: 'Confirmé',
-              clientName: pickClientName(res),
-              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
-            };
+            residencyId = res.id;
           }
         }
 
         if (!highlighted) {
           const { data: pendingApps } = await supabase
             .from('residency_applications')
-            .select('date, status, residencies(id, name, start_date, end_date, clients(name))')
+            .select(
+              'date, status, residencies(id, name, start_date, end_date, mode, clients(name))'
+            )
             .eq('artist_id', artistId)
             .eq('status', 'PENDING')
             .gte('date', todayStr)
@@ -363,15 +395,20 @@ export default function DashboardPage() {
           const pendingApp = pendingApps?.[0] ?? null;
           if (pendingApp) {
             const res = unwrap(pendingApp.residencies as any);
-            highlighted = {
-              id: res?.id ?? '',
-              name: res?.name ?? 'Programmation',
-              start_date: pendingApp.date,
-              end_date: pendingApp.date,
-              statusLabel: 'Candidature envoyée',
-              clientName: pickClientName(res),
-              href: res?.id ? `/artist/programmations/${res.id}` : '/artist/programmations',
-            };
+            if (res?.id) {
+              highlighted = {
+                id: res.id,
+                name: res?.name ?? 'Programmation',
+                start_date: res?.start_date ?? pendingApp.date,
+                end_date: res?.end_date ?? pendingApp.date,
+                mode: res?.mode ?? 'DATES',
+                statusLabel: 'En attente',
+                clientName: pickClientName(res),
+                href: `/artist/programmations/${res.id}`,
+                periodLabel: '',
+              };
+              residencyId = res.id;
+            }
           }
         }
 
@@ -383,24 +420,165 @@ export default function DashboardPage() {
           const { data: resInvites } = await supabase
             .from('residency_invitations')
             .select(
-              'id, token, status, sent_at, created_at, target_filter, residencies(id, name, start_date, end_date, clients(name))'
+              'id, token, status, sent_at, created_at, target_filter, residencies(id, name, start_date, end_date, mode, clients(name))'
             )
             .or(inviteFilters.join(','))
             .order('created_at', { ascending: false })
             .limit(1);
           const inv = resInvites?.[0] ?? null;
           const res = unwrap(inv?.residencies as any);
-          if (inv && res?.id && res?.start_date && res?.end_date) {
+          if (inv && res?.id) {
             highlighted = {
               id: res.id,
               name: res?.name ?? 'Programmation',
               start_date: res?.start_date,
               end_date: res?.end_date,
-              statusLabel: 'En attente',
+              mode: res?.mode ?? 'DATES',
+              statusLabel: 'Invitation reçue',
               clientName: pickClientName(res),
               href: `/availability/${inv.token}`,
+              periodLabel: '',
             };
+            residencyId = res.id;
           }
+        }
+
+        if (!highlighted) {
+          const { data: openResidencies } = await supabase
+            .from('residencies')
+            .select('id, name, start_date, end_date, mode, clients(name)')
+            .eq('is_public', true)
+            .eq('is_open', true)
+            .gte('end_date', todayStr)
+            .order('start_date', { ascending: true })
+            .limit(1);
+          const res = openResidencies?.[0] as any;
+          if (res?.id) {
+            highlighted = {
+              id: res.id,
+              name: res?.name ?? 'Programmation',
+              start_date: res?.start_date,
+              end_date: res?.end_date,
+              mode: res?.mode ?? 'DATES',
+              statusLabel: 'Aucune action',
+              clientName: pickClientName(res),
+              href: `/artist/programmations/${res.id}`,
+              periodLabel: '',
+            };
+            residencyId = res.id;
+          }
+        }
+
+        if (highlighted && residencyId) {
+          if (highlighted.mode === 'DATES') {
+            const { data: occ, error: occErr } = await supabase
+              .from('residency_occurrences')
+              .select('date')
+              .eq('residency_id', residencyId)
+              .order('date', { ascending: true });
+            const occDates = occErr ? [] : (occ ?? []).map((o) => o.date);
+            const minDate = occDates[0] ?? highlighted.start_date;
+            const maxDate = occDates[occDates.length - 1] ?? highlighted.end_date;
+            highlighted.periodLabel =
+              occDates.length > 0
+                ? `${occDates.length} dates • du ${fmtDateFR(minDate)} au ${fmtDateFR(maxDate)}`
+                : `0 date`;
+
+            const upcomingDates = occDates.filter((d) => d >= todayStr).slice(0, 3);
+            const { data: appRows, error: appErr } = await supabase
+              .from('residency_applications')
+              .select('date, status')
+              .eq('residency_id', residencyId)
+              .eq('artist_id', artistId)
+              .in('date', upcomingDates);
+
+            const statusByDate = new Map(
+              (appErr ? [] : appRows ?? []).map((row) => [row.date, row.status])
+            );
+            const nextDates = upcomingDates.map((d) => {
+              const status = statusByDate.get(d) ?? 'TO_RESPOND';
+              const label =
+                status === 'CONFIRMED'
+                  ? 'Confirmé'
+                  : status === 'PENDING'
+                    ? 'En attente'
+                    : status === 'DECLINED'
+                      ? 'Refusé'
+                      : status === 'CANCELLED'
+                        ? 'Annulé'
+                        : 'À répondre';
+              return {
+                key: d,
+                label: fmtDateFR(d),
+                status: label,
+              };
+            });
+            setArtistNextDates(nextDates);
+          } else {
+            const { data: weeks, error: weeksErr } = await supabase
+              .from('residency_weeks')
+              .select('id, start_date_sun, end_date_sun')
+              .eq('residency_id', residencyId)
+              .order('start_date_sun', { ascending: true });
+            const weekRows = (weeksErr ? [] : weeks ?? [])
+              .filter((w) => w.end_date_sun >= todayStr)
+              .slice(0, 3);
+            const weekIds = weekRows.map((w) => w.id);
+            const { data: weekApps, error: weekAppsErr } = await supabase
+              .from('week_applications')
+              .select('residency_week_id, status')
+              .eq('artist_id', artistId)
+              .in('residency_week_id', weekIds);
+            const { data: weekBookings, error: weekBookingsErr } = await supabase
+              .from('week_bookings')
+              .select('residency_week_id, status')
+              .eq('artist_id', artistId)
+              .in('residency_week_id', weekIds);
+
+            const appByWeek = new Map(
+              (weekAppsErr ? [] : weekApps ?? []).map((row) => [
+                row.residency_week_id,
+                row.status,
+              ])
+            );
+            const bookingByWeek = new Map(
+              (weekBookingsErr ? [] : weekBookings ?? []).map((row) => [
+                row.residency_week_id,
+                row.status,
+              ])
+            );
+
+            highlighted.periodLabel =
+              !weeksErr && weeks && weeks.length > 0
+                ? `${weeks.length} semaines • ${fmtDateFR(highlighted.start_date)} → ${fmtDateFR(
+                    highlighted.end_date
+                  )}`
+                : `${fmtDateFR(highlighted.start_date)} → ${fmtDateFR(highlighted.end_date)}`;
+
+            const nextDates = weekRows.map((w) => {
+              const bookingStatus = bookingByWeek.get(w.id);
+              const appStatus = appByWeek.get(w.id);
+              const status = bookingStatus === 'CONFIRMED'
+                ? 'Confirmé'
+                : appStatus === 'APPLIED'
+                  ? 'En attente'
+                  : 'À répondre';
+              return {
+                key: w.id,
+                label: `${fmtDateFR(w.start_date_sun)} → ${fmtDateFR(w.end_date_sun)}`,
+                status,
+              };
+            });
+            setArtistNextDates(nextDates);
+          }
+        } else {
+          setArtistNextDates([]);
+        }
+
+        if (highlighted && !highlighted.periodLabel) {
+          highlighted.periodLabel = `${fmtDateFR(highlighted.start_date)} → ${fmtDateFR(
+            highlighted.end_date
+          )}`;
         }
 
         setArtistHighlighted(highlighted);
@@ -409,50 +587,183 @@ export default function DashboardPage() {
       /* ====== ADMIN ====== */
       if (prof?.role === 'admin') {
         const todayStr = new Date().toISOString().slice(0, 10);
-        const { data: activeResidencies } = await supabase
-          .from('residencies')
-          .select('id, name, start_date, end_date, is_public, is_open, created_at, clients(name)')
-          .gte('end_date', todayStr)
-          .order('start_date', { ascending: true });
+        const pickClientName = (res: any) =>
+          Array.isArray(res?.clients) ? res?.clients[0]?.name : res?.clients?.name ?? null;
 
         let highlighted: HighlightedResidency | null = null;
-        if (activeResidencies && activeResidencies.length > 0) {
-          const published = activeResidencies.filter((r: any) => r.is_public);
-          const pick = (published.length ? published : activeResidencies)[0] as any;
-          const clientName = Array.isArray(pick.clients)
-            ? pick.clients[0]?.name
-            : pick.clients?.name ?? null;
-          highlighted = {
+
+        const { data: reqs, error: reqErr } = await supabase
+          .from('booking_requests')
+          .select('id, title, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (reqErr) {
+          setLastError(`Demandes : ${reqErr.message}`);
+        }
+        setAdminRequests((reqs ?? []) as BookingRequest[]);
+
+        const { data: props, error: propErr } = await supabase
+          .from('proposals')
+          .select('id, status, request_id, booking_requests(id, title)')
+          .order('created_at', { ascending: false })
+          .limit(20);
+        if (propErr) {
+          setLastError(`Propositions : ${propErr.message}`);
+        }
+        setAdminProposals(
+          (props ?? []).map((p: any) => ({
+            ...p,
+            booking_requests: unwrap(p.booking_requests),
+          })) as Proposal[]
+        );
+
+        const { data: activeList, error: listErr } = await supabase
+          .from('residencies')
+          .select('id, name, start_date, end_date, mode, is_public, is_open, clients(name)')
+          .gte('end_date', todayStr)
+          .order('start_date', { ascending: true })
+          .limit(5);
+        if (listErr) {
+          setLastError(`Programmations : ${listErr.message}`);
+        }
+        setAdminResidencyList(
+          (activeList ?? []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            start_date: r.start_date,
+            end_date: r.end_date,
+            mode: r.mode ?? 'RANGE',
+            is_open: r.is_open,
+            is_public: r.is_public,
+            clientName: pickClientName(r),
+            periodLabel:
+              r.mode === 'DATES'
+                ? `Dates multiples • ${fmtDateFR(r.start_date)} → ${fmtDateFR(r.end_date)}`
+                : `${fmtDateFR(r.start_date)} → ${fmtDateFR(r.end_date)}`,
+            totalCount: 0,
+            confirmedCount: 0,
+            pendingCount: 0,
+            emptyCount: 0,
+          })) as HighlightedResidency[]
+        );
+
+        const { data: openOrActive } = await supabase
+          .from('residencies')
+          .select(
+            'id, name, start_date, end_date, mode, is_public, is_open, updated_at, clients(name)'
+          )
+          .or(`is_open.eq.true,and(start_date.lte.${todayStr},end_date.gte.${todayStr})`)
+          .order('start_date', { ascending: true })
+          .limit(5);
+
+        let pick = openOrActive?.find((r: any) => r.is_open) ?? openOrActive?.[0];
+
+        if (!pick) {
+          const { data: next } = await supabase
+            .from('residencies')
+            .select(
+              'id, name, start_date, end_date, mode, is_public, is_open, updated_at, clients(name)'
+            )
+            .gte('start_date', todayStr)
+            .order('start_date', { ascending: true })
+            .limit(1);
+          pick = next?.[0];
+        }
+
+        if (!pick) {
+          const { data: latest } = await supabase
+            .from('residencies')
+            .select(
+              'id, name, start_date, end_date, mode, is_public, is_open, updated_at, clients(name)'
+            )
+            .order('updated_at', { ascending: false })
+            .limit(1);
+          pick = latest?.[0];
+        }
+
+        if (pick?.id) {
+          const base: HighlightedResidency = {
             id: pick.id,
             name: pick.name,
             start_date: pick.start_date,
             end_date: pick.end_date,
+            mode: pick.mode ?? 'RANGE',
             is_open: pick.is_open,
             is_public: pick.is_public,
-            clientName,
+            clientName: pickClientName(pick),
+            periodLabel: '',
+            totalCount: 0,
+            confirmedCount: 0,
+            pendingCount: 0,
+            emptyCount: 0,
           };
-        } else {
-          const { data: latest } = await supabase
-            .from('residencies')
-            .select('id, name, start_date, end_date, is_public, is_open, created_at, clients(name)')
-            .order('created_at', { ascending: false })
-            .limit(1);
-          const pick = latest?.[0] as any;
-          if (pick) {
-            const clientName = Array.isArray(pick.clients)
-              ? pick.clients[0]?.name
-              : pick.clients?.name ?? null;
-            highlighted = {
-              id: pick.id,
-              name: pick.name,
-              start_date: pick.start_date,
-              end_date: pick.end_date,
-              is_open: pick.is_open,
-              is_public: pick.is_public,
-              clientName,
-            };
+
+          if (base.mode === 'DATES') {
+            const { data: occ, error: occErr } = await supabase
+              .from('residency_occurrences')
+              .select('date')
+              .eq('residency_id', base.id)
+              .order('date', { ascending: true });
+            const occDates = occErr ? [] : (occ ?? []).map((o) => o.date);
+            const minDate = occDates[0] ?? base.start_date;
+            const maxDate = occDates[occDates.length - 1] ?? base.end_date;
+            base.totalCount = occDates.length;
+            base.periodLabel =
+              occDates.length > 0
+                ? `${occDates.length} dates • du ${fmtDateFR(minDate)} au ${fmtDateFR(maxDate)}`
+                : `0 date`;
+
+            if (occDates.length > 0) {
+              const { data: apps, error: appsErr } = await supabase
+                .from('residency_applications')
+                .select('date, status')
+                .eq('residency_id', base.id);
+              const statusByDate = new Map<string, string[]>();
+              (appsErr ? [] : apps ?? []).forEach((row) => {
+                const arr = statusByDate.get(row.date) ?? [];
+                arr.push(row.status);
+                statusByDate.set(row.date, arr);
+              });
+              occDates.forEach((d) => {
+                const statuses = statusByDate.get(d) ?? [];
+                if (statuses.includes('CONFIRMED')) {
+                  base.confirmedCount += 1;
+                } else if (statuses.includes('PENDING')) {
+                  base.pendingCount += 1;
+                } else {
+                  base.emptyCount += 1;
+                }
+              });
+            }
+          } else {
+            const { data: weeks, error: weeksErr } = await supabase
+              .from('residency_weeks')
+              .select('id, start_date_sun, end_date_sun, week_bookings(status), week_applications(status)')
+              .eq('residency_id', base.id)
+              .order('start_date_sun', { ascending: true });
+            const weekRows = (weeksErr ? [] : weeks ?? []) as any[];
+            base.totalCount = weekRows.length;
+            base.periodLabel =
+              weekRows.length > 0
+                ? `${weekRows.length} semaines • ${fmtDateFR(base.start_date)} → ${fmtDateFR(
+                    base.end_date
+                  )}`
+                : `${fmtDateFR(base.start_date)} → ${fmtDateFR(base.end_date)}`;
+            weekRows.forEach((w) => {
+              const bookings = Array.isArray(w.week_bookings) ? w.week_bookings : w.week_bookings ? [w.week_bookings] : [];
+              const apps = Array.isArray(w.week_applications) ? w.week_applications : w.week_applications ? [w.week_applications] : [];
+              if (bookings.some((b: any) => b.status === 'CONFIRMED')) {
+                base.confirmedCount += 1;
+              } else if (apps.some((a: any) => a.status === 'APPLIED')) {
+                base.pendingCount += 1;
+              } else {
+                base.emptyCount += 1;
+              }
+            });
           }
+          highlighted = base;
         }
+
         setAdminHighlighted(highlighted);
       }
 
@@ -461,6 +772,28 @@ export default function DashboardPage() {
   }, [router]);
 
   const role = profile?.role;
+  const artistActions = useMemo(
+    () =>
+      computeActions({
+        role: 'artist',
+        invites: artistInvites as any,
+        proposals: artistProposals as any,
+      }),
+    [artistInvites, artistProposals]
+  );
+  const adminActions = useMemo(
+    () =>
+      computeActions({
+        role: 'admin',
+        requests: adminRequests,
+        proposals: adminProposals,
+      }),
+    [adminRequests, adminProposals]
+  );
+  const artistNextConfirmed = useMemo(
+    () => artistNextDates.find((d) => d.status === 'Confirmé') ?? null,
+    [artistNextDates]
+  );
 
   if (loading)
     return <div className="text-slate-500">Chargement du tableau de bord…</div>;
@@ -503,6 +836,22 @@ export default function DashboardPage() {
             </div>
           ) : null}
 
+          <section className="rounded-2xl border bg-white p-5 space-y-3">
+            <h3 className="text-lg font-semibold">Résumé</h3>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="rounded-xl border p-3 bg-slate-50">
+                <div className="text-xs text-slate-500">Prochaine date confirmée</div>
+                <div className="text-sm font-semibold">
+                  {artistNextConfirmed?.label ?? 'Aucune date confirmée'}
+                </div>
+              </div>
+              <div className="rounded-xl border p-3 bg-slate-50">
+                <div className="text-xs text-slate-500">Actions requises</div>
+                <div className="text-sm font-semibold">{artistActions.length}</div>
+              </div>
+            </div>
+          </section>
+
           <div className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
               <h2 className="text-2xl font-bold">Tableau de bord artiste</h2>
@@ -514,6 +863,15 @@ export default function DashboardPage() {
                 { href: '/artist/programmations', label: 'Programmations' },
               ]}
             />
+          </div>
+
+          <div className="space-y-3">
+            <ActionsRequiredList actions={artistActions} />
+            {artistActions.length === 0 ? (
+              <p className="text-sm text-slate-600">
+                Aucune action requise. Vous pouvez consulter les programmations ouvertes.
+              </p>
+            ) : null}
           </div>
 
           <div className="grid md:grid-cols-3 gap-4">
@@ -531,11 +889,15 @@ export default function DashboardPage() {
                   <div className="text-lg font-semibold">{artistHighlighted.name}</div>
                   <div className="text-sm text-slate-600">
                     {artistHighlighted.clientName ? `${artistHighlighted.clientName} • ` : ''}
-                    {fmtDateFR(artistHighlighted.start_date)} →{' '}
-                    {fmtDateFR(artistHighlighted.end_date)}
+                    {artistHighlighted.periodLabel ||
+                      `${fmtDateFR(artistHighlighted.start_date)} → ${fmtDateFR(
+                        artistHighlighted.end_date
+                      )}`}
                   </div>
-                  <div className="text-sm text-slate-600">
-                    Statut : {artistHighlighted.statusLabel}
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                      {artistHighlighted.statusLabel}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -577,6 +939,42 @@ export default function DashboardPage() {
               </div>
             </section>
           </div>
+
+          {artistNextDates.length === 0 && artistActions.length === 0 ? (
+            <section className="rounded-2xl border bg-white p-5 text-sm text-slate-600">
+              Rien à traiter pour le moment.
+            </section>
+          ) : (
+            <section className="rounded-2xl border bg-white p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Mes prochaines dates</h3>
+                {artistHighlighted ? (
+                  <Link
+                    href={artistHighlighted.href}
+                    className="text-sm underline text-[var(--brand)]"
+                  >
+                    Voir la programmation
+                  </Link>
+                ) : null}
+              </div>
+              {artistNextDates.length === 0 ? (
+                <p className="text-sm text-slate-600">
+                  Aucune date à afficher pour le moment.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {artistNextDates.map((d) => (
+                    <li key={d.key} className="flex items-center justify-between gap-2 text-sm">
+                      <span>{d.label}</span>
+                      <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                        {d.status}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </section>
       )}
 
@@ -592,8 +990,10 @@ export default function DashboardPage() {
                     <div className="text-lg font-semibold">{adminHighlighted.name}</div>
                     <div className="text-sm text-slate-600">
                       {adminHighlighted.clientName ? `${adminHighlighted.clientName} • ` : ''}
-                      {fmtDateFR(adminHighlighted.start_date)} →{' '}
-                      {fmtDateFR(adminHighlighted.end_date)}
+                      {adminHighlighted.periodLabel ||
+                        `${fmtDateFR(adminHighlighted.start_date)} → ${fmtDateFR(
+                          adminHighlighted.end_date
+                        )}`}
                     </div>
                     <div className="text-sm text-slate-600">
                       Statut : {adminHighlighted.is_open ? 'Ouverte' : 'Confirmée'}
@@ -615,17 +1015,71 @@ export default function DashboardPage() {
                 </Link>
               )}
             </div>
+            {adminHighlighted ? (
+              <div className="grid md:grid-cols-4 gap-3">
+                <div className="rounded-xl border p-3 bg-slate-50">
+                  <div className="text-xs text-slate-500">Total</div>
+                  <div className="text-lg font-semibold">{adminHighlighted.totalCount}</div>
+                </div>
+                <div className="rounded-xl border p-3 bg-slate-50">
+                  <div className="text-xs text-slate-500">Confirmées</div>
+                  <div className="text-lg font-semibold">{adminHighlighted.confirmedCount}</div>
+                </div>
+                <div className="rounded-xl border p-3 bg-slate-50">
+                  <div className="text-xs text-slate-500">En attente</div>
+                  <div className="text-lg font-semibold">{adminHighlighted.pendingCount}</div>
+                </div>
+                <div className="rounded-xl border p-3 bg-slate-50">
+                  <div className="text-xs text-slate-500">Sans artiste</div>
+                  <div className="text-lg font-semibold">{adminHighlighted.emptyCount}</div>
+                </div>
+              </div>
+            ) : null}
           </section>
+
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">À traiter</h3>
+            <ActionsRequiredList actions={adminActions} />
+          </div>
 
           <section className="rounded-2xl border bg-white p-5 space-y-3">
             <h3 className="text-lg font-semibold">Actions rapides</h3>
             <QuickLinks
               items={[
                 { href: '/admin/programmations', label: 'Créer une programmation' },
-                { href: '/admin/programmations', label: 'Voir toutes les programmations' },
+                { href: '/admin/requests', label: 'Voir les demandes' },
                 { href: '/admin/calendar', label: 'Agenda' },
               ]}
             />
+          </section>
+
+          <section className="rounded-2xl border bg-white p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Programmations actives</h3>
+              <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
+                Voir tout
+              </Link>
+            </div>
+            {adminResidencyList.length === 0 ? (
+              <p className="text-sm text-slate-600">Aucune programmation active.</p>
+            ) : (
+              <ul className="space-y-2">
+                {adminResidencyList.slice(0, 5).map((res) => (
+                  <li key={res.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div>
+                      <div className="font-medium">{res.name}</div>
+                      <div className="text-slate-600">
+                        {res.clientName ? `${res.clientName} • ` : ''}
+                        {res.periodLabel}
+                      </div>
+                    </div>
+                    <Link href={`/admin/programmations/${res.id}`} className="btn">
+                      Ouvrir
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         </section>
       )}
@@ -691,6 +1145,7 @@ function VenueDashboard({
       tab === 'active' ? !historyStatuses.includes(r.status) : historyStatuses.includes(r.status)
     );
   }, [requests, tab]);
+  const noActivity = requests.length === 0 && proposals.length === 0;
 
   return (
     <section className="space-y-6">
@@ -708,17 +1163,46 @@ function VenueDashboard({
         />
       </div>
 
-      {/* KPIs */}
-      <div className="grid md:grid-cols-5 gap-3">
-        <KpiCard label="En cours" value={kpis.total - kpis.finished} />
-        <KpiCard label="En attente de proposition" value={kpis.awaitingProposal} />
-        <KpiCard label="En attente de votre réponse" value={kpis.awaitingClient} />
-        <KpiCard label="Confirmés / À venir" value={kpis.confirmed} />
-        <KpiCard label="Terminés" value={kpis.finished} />
+      <div className="flex flex-wrap gap-2">
+        <Link href="/catalogue" className="btn btn-primary">
+          Créer une demande
+        </Link>
+        <Link href="/catalogue" className="btn">
+          Parcourir les formats d&apos;événements
+        </Link>
       </div>
 
+      {/* KPIs */}
+      {noActivity ? (
+        <div className="rounded-2xl border bg-white p-5">
+          <div className="text-sm text-slate-600">
+            Vous n’avez aucune demande pour le moment.
+          </div>
+          <div className="mt-3">
+            <Link href="/catalogue" className="btn btn-primary">
+              Créer une demande
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-5 gap-3">
+          <KpiCard label="En cours" value={kpis.total - kpis.finished} />
+          <KpiCard label="En attente de proposition" value={kpis.awaitingProposal} />
+          <KpiCard label="En attente de votre réponse" value={kpis.awaitingClient} />
+          <KpiCard label="Confirmés / À venir" value={kpis.confirmed} />
+          <KpiCard label="Terminés" value={kpis.finished} />
+        </div>
+      )}
+
       {/* Actions requises */}
-      <ActionsRequiredList actions={actions} />
+      <div className="space-y-2">
+        <ActionsRequiredList actions={actions} />
+        {actions.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            Aucune action requise. Créez une demande pour démarrer.
+          </p>
+        ) : null}
+      </div>
 
       {/* Prochains événements */}
       <section className="rounded-2xl border bg-white p-5 space-y-3">
@@ -729,7 +1213,13 @@ function VenueDashboard({
           </Link>
         </div>
         {upcoming.length === 0 ? (
-          <p className="text-sm text-slate-600">Aucun événement à venir pour le moment.</p>
+          <div className="text-sm text-slate-600">
+            Aucun événement à venir pour le moment.{' '}
+            <Link href="/catalogue" className="underline text-[var(--brand)]">
+              Créer une demande
+            </Link>
+            .
+          </div>
         ) : (
           <ul className="space-y-2">
             {upcoming.map((r) => (
@@ -778,7 +1268,11 @@ function VenueDashboard({
         </div>
         {filteredRequests.length === 0 ? (
           <div className="rounded-xl border border-dashed p-4 text-sm text-slate-600 bg-slate-50">
-            Aucune demande dans cette section.
+            Aucune demande dans cette section.{' '}
+            <Link href="/catalogue" className="underline text-[var(--brand)]">
+              Créer une demande
+            </Link>
+            .
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-3">
@@ -812,11 +1306,6 @@ function VenueDashboard({
       {/* Catalogue artistes débloqués */}
       <VenueUnlockedArtistsSection items={unlocked} />
 
-      <div className="flex">
-        <Link href="/catalogue" className="btn btn-primary w-full md:w-auto">
-          Parcourir les formats d&apos;événements
-        </Link>
-      </div>
     </section>
   );
 }
@@ -1386,6 +1875,14 @@ function ProfileProgress({ artist }: { artist: ArtistMini | null }) {
     const percent = Math.round((okCount / checks.length) * 100);
     return { percent };
   }, [artist]);
+
+  if (percent === 100) {
+    return (
+      <div className="rounded-xl border p-3 text-sm text-emerald-700 bg-emerald-50">
+        Profil complet
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-xl border p-3">
