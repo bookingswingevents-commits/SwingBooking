@@ -151,6 +151,35 @@ type ArtistNextDate = {
   status: string;
 };
 
+type AdminKpis = {
+  requestsOpen: number;
+  proposalsPending: number;
+  weeksToFill: number;
+  upcomingCount: number;
+};
+
+type AdminUpcomingItem = {
+  id: string;
+  date: string;
+  title: string;
+  subtitle: string;
+  href: string;
+  kind: 'residency' | 'oneoff';
+};
+
+type AdminOpenWeek = {
+  id: string;
+  start_date_sun: string;
+  end_date_sun: string;
+  residencies?: {
+    id: string;
+    name: string;
+    clients?: { name: string }[] | null;
+  }[] | null;
+  week_applications?: { id: string }[] | null;
+  week_bookings?: { status: string }[] | null;
+};
+
 /* ================== Page ================== */
 export default function DashboardPage() {
   const router = useRouter();
@@ -181,6 +210,15 @@ export default function DashboardPage() {
   const [adminRequests, setAdminRequests] = useState<BookingRequest[]>([]);
   const [adminProposals, setAdminProposals] = useState<Proposal[]>([]);
   const [adminResidencyList, setAdminResidencyList] = useState<HighlightedResidency[]>([]);
+  const [adminKpis, setAdminKpis] = useState<AdminKpis>({
+    requestsOpen: 0,
+    proposalsPending: 0,
+    weeksToFill: 0,
+    upcomingCount: 0,
+  });
+  const [adminUpcoming, setAdminUpcoming] = useState<AdminUpcomingItem[]>([]);
+  const [adminOpenWeeks, setAdminOpenWeeks] = useState<AdminOpenWeek[]>([]);
+  const [showCreateMenu, setShowCreateMenu] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -501,12 +539,12 @@ export default function DashboardPage() {
                 status === 'CONFIRMED'
                   ? 'Confirmé'
                   : status === 'PENDING'
-                    ? 'En attente'
-                    : status === 'DECLINED'
-                      ? 'Refusé'
-                      : status === 'CANCELLED'
-                        ? 'Annulé'
-                        : 'À répondre';
+                    ? 'En attente de confirmation'
+                  : status === 'DECLINED'
+                    ? 'Refusé'
+                  : status === 'CANCELLED'
+                    ? 'Annulé'
+                    : 'En attente de confirmation';
               return {
                 key: d,
                 label: fmtDateFR(d),
@@ -561,8 +599,8 @@ export default function DashboardPage() {
               const status = bookingStatus === 'CONFIRMED'
                 ? 'Confirmé'
                 : appStatus === 'APPLIED'
-                  ? 'En attente'
-                  : 'À répondre';
+                  ? 'En attente de confirmation'
+                  : 'En attente de confirmation';
               return {
                 key: w.id,
                 label: `${fmtDateFR(w.start_date_sun)} → ${fmtDateFR(w.end_date_sun)}`,
@@ -646,6 +684,94 @@ export default function DashboardPage() {
             emptyCount: 0,
           })) as HighlightedResidency[]
         );
+
+        const openStatuses = ['open', 'pending', 'new', 'to_process', 'draft', 'OPEN', 'PENDING'];
+        const { count: openReqCount } = await supabase
+          .from('booking_requests')
+          .select('id', { count: 'exact', head: true })
+          .in('status', openStatuses);
+
+        const proposalStatuses = [
+          'proposal_sent',
+          'waiting_client',
+          'pending_client',
+          'sent',
+          'pending',
+          'PENDING',
+        ];
+        const { count: pendingPropCount } = await supabase
+          .from('proposals')
+          .select('id', { count: 'exact', head: true })
+          .in('status', proposalStatuses);
+
+        const { data: openWeeks } = await supabase
+          .from('residency_weeks')
+          .select(
+            'id, start_date_sun, end_date_sun, status, residencies(id, name, clients(name)), week_applications(id), week_bookings(status)'
+          )
+          .eq('status', 'OPEN')
+          .gte('end_date_sun', todayStr)
+          .order('start_date_sun', { ascending: true })
+          .limit(20);
+        const openWeekRows = (openWeeks ?? []) as AdminOpenWeek[];
+        const weeksToFill = openWeekRows.filter((w) => {
+          const bookings = w.week_bookings ?? [];
+          const confirmed = bookings.some((b) => b.status === 'CONFIRMED');
+          return !confirmed;
+        }).length;
+        setAdminOpenWeeks(openWeekRows);
+
+        const inDays = 30;
+        const inDate = new Date();
+        inDate.setDate(inDate.getDate() + inDays);
+        const endStr = inDate.toISOString().slice(0, 10);
+        const { data: upcomingApps } = await supabase
+          .from('residency_applications')
+          .select('date, residencies(id, name, clients(name))')
+          .eq('status', 'CONFIRMED')
+          .gte('date', todayStr)
+          .lte('date', endStr)
+          .order('date', { ascending: true })
+          .limit(5);
+        const upcomingFromResidencies = (upcomingApps ?? []).map((row: any) => ({
+          id: `${row.residencies?.id ?? 'res'}-${row.date}`,
+          date: row.date,
+          title: row.residencies?.name ?? 'Programmation',
+          subtitle: Array.isArray(row.residencies?.clients)
+            ? row.residencies?.clients?.[0]?.name ?? ''
+            : row.residencies?.clients?.name ?? '',
+          href: row.residencies?.id ? `/admin/programmations/${row.residencies.id}` : '/admin/programmations',
+          kind: 'residency' as const,
+        }));
+        const { data: upcomingWeeks } = await supabase
+          .from('residency_weeks')
+          .select('start_date_sun, residencies(id, name, clients(name)), week_bookings!inner(status)')
+          .eq('week_bookings.status', 'CONFIRMED')
+          .gte('start_date_sun', todayStr)
+          .lte('start_date_sun', endStr)
+          .order('start_date_sun', { ascending: true })
+          .limit(5);
+        const upcomingFromWeeks = (upcomingWeeks ?? []).map((row: any) => ({
+          id: `${row.residencies?.id ?? 'res'}-${row.start_date_sun}`,
+          date: row.start_date_sun,
+          title: row.residencies?.name ?? 'Programmation',
+          subtitle: Array.isArray(row.residencies?.clients)
+            ? row.residencies?.clients?.[0]?.name ?? ''
+            : row.residencies?.clients?.name ?? '',
+          href: row.residencies?.id ? `/admin/programmations/${row.residencies.id}` : '/admin/programmations',
+          kind: 'residency' as const,
+        }));
+        const upcoming = [...upcomingFromResidencies, ...upcomingFromWeeks]
+          .sort((a, b) => (a.date > b.date ? 1 : -1))
+          .slice(0, 5);
+        setAdminUpcoming(upcoming);
+
+        setAdminKpis({
+          requestsOpen: openReqCount ?? 0,
+          proposalsPending: pendingPropCount ?? 0,
+          weeksToFill,
+          upcomingCount: upcoming.length,
+        });
 
         const { data: openOrActive } = await supabase
           .from('residencies')
@@ -794,6 +920,11 @@ export default function DashboardPage() {
     () => artistNextDates.find((d) => d.status === 'Confirmé') ?? null,
     [artistNextDates]
   );
+  const artistPendingCount = useMemo(
+    () =>
+      artistNextDates.filter((d) => d.status === 'En attente de confirmation').length,
+    [artistNextDates]
+  );
 
   if (loading)
     return <div className="text-slate-500">Chargement du tableau de bord…</div>;
@@ -836,23 +967,7 @@ export default function DashboardPage() {
             </div>
           ) : null}
 
-          <section className="rounded-2xl border bg-white p-5 space-y-3">
-            <h3 className="text-lg font-semibold">Résumé</h3>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div className="rounded-xl border p-3 bg-slate-50">
-                <div className="text-xs text-slate-500">Prochaine date confirmée</div>
-                <div className="text-sm font-semibold">
-                  {artistNextConfirmed?.label ?? 'Aucune date confirmée'}
-                </div>
-              </div>
-              <div className="rounded-xl border p-3 bg-slate-50">
-                <div className="text-xs text-slate-500">Actions requises</div>
-                <div className="text-sm font-semibold">{artistActions.length}</div>
-              </div>
-            </div>
-          </section>
-
-          <div className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <section className="rounded-2xl border bg-white p-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-1">
               <h2 className="text-2xl font-bold">Tableau de bord artiste</h2>
             </div>
@@ -863,194 +978,296 @@ export default function DashboardPage() {
                 { href: '/artist/programmations', label: 'Programmations' },
               ]}
             />
+          </section>
+
+          <div className="grid md:grid-cols-[2fr_1fr] gap-4">
+            <div className="space-y-4">
+              <section className="rounded-2xl border bg-white p-5 space-y-3">
+                <h3 className="text-lg font-semibold">Résumé</h3>
+                <div className="rounded-xl border p-4 bg-slate-50 space-y-1">
+                  <div className="text-xs text-slate-500">Prochaine prestation confirmée</div>
+                  <div className="text-sm font-semibold">
+                    {artistNextConfirmed?.label ?? 'Aucune prestation confirmée'}
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    {artistHighlighted?.clientName ?? 'Programmation'} •{' '}
+                    {artistHighlighted?.name ?? '—'}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {artistHighlighted?.periodLabel ??
+                      (artistHighlighted
+                        ? `Résidence • ${fmtDateFR(artistHighlighted.start_date)} → ${fmtDateFR(
+                            artistHighlighted.end_date
+                          )}`
+                        : 'Résidence')}
+                  </div>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  <div className="rounded-xl border p-3 bg-slate-50">
+                    <div className="text-xs text-slate-500">Dates confirmées à venir</div>
+                    <div className="text-sm font-semibold">
+                      {artistNextDates.filter((d) => d.status === 'Confirmé').length}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border p-3 bg-slate-50">
+                    <div className="text-xs text-slate-500">En attente de confirmation</div>
+                    <div className="text-sm font-semibold">{artistPendingCount}</div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <ActionsRequiredList actions={artistActions} />
+                {artistActions.length === 0 ? (
+                  <div className="text-sm text-slate-600 space-y-1">
+                    <div>Aucune action requise de votre part.</div>
+                    {artistPendingCount > 0 ? (
+                      <div className="text-xs text-slate-500">
+                        {artistPendingCount} date
+                        {artistPendingCount > 1 ? 's' : ''} en attente de confirmation par
+                        l’organisateur.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+            </div>
+
+            <div className="space-y-4 md:sticky md:top-4 z-0 self-start">
+              <section className="rounded-2xl border p-4 space-y-3 bg-white">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Mon profil artiste</h2>
+                  <Link href="/artist/profile" className="btn btn-primary">
+                    Modifier mon profil
+                  </Link>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="font-medium">
+                      {artist?.stage_name || 'Nom de scène non renseigné'}
+                    </div>
+                    {artist?.is_active ? (
+                      <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
+                        Actif
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                        Inactif
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="text-sm text-slate-600">
+                    Formations : {artist?.formations?.length ? artist.formations.join(', ') : '—'}
+                  </div>
+
+                  <ProfileProgress artist={artist} />
+                </div>
+              </section>
+              <NotesWidget />
+            </div>
           </div>
 
-          <div className="space-y-3">
-            <ActionsRequiredList actions={artistActions} />
-            {artistActions.length === 0 ? (
-              <p className="text-sm text-slate-600">
-                Aucune action requise. Vous pouvez consulter les programmations ouvertes.
-              </p>
-            ) : null}
-          </div>
+          <section className="rounded-2xl border bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Mes prestations à venir</h3>
+              <Link href="/artist/programmations" className="btn">
+                Programmations
+              </Link>
+            </div>
 
-          <div className="grid md:grid-cols-3 gap-4">
-            <section className="md:col-span-2 rounded-2xl border bg-white p-5 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold">Programmation à suivre</h3>
-                {artistHighlighted ? (
+            {artistHighlighted ? (
+              <div className="rounded-xl border p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">
+                      Résidence — {artistHighlighted.clientName || 'Client'}
+                    </div>
+                    <div className="text-sm text-slate-600">
+                      {artistHighlighted.periodLabel ||
+                        `${fmtDateFR(artistHighlighted.start_date)} → ${fmtDateFR(
+                          artistHighlighted.end_date
+                        )}`}
+                    </div>
+                  </div>
                   <Link href={artistHighlighted.href} className="btn btn-primary">
                     Voir la programmation
                   </Link>
-                ) : null}
-              </div>
-              {artistHighlighted ? (
-                <div className="space-y-1">
-                  <div className="text-lg font-semibold">{artistHighlighted.name}</div>
+                </div>
+                {artistNextDates.length === 0 ? (
                   <div className="text-sm text-slate-600">
-                    {artistHighlighted.clientName ? `${artistHighlighted.clientName} • ` : ''}
-                    {artistHighlighted.periodLabel ||
-                      `${fmtDateFR(artistHighlighted.start_date)} → ${fmtDateFR(
-                        artistHighlighted.end_date
-                      )}`}
+                    Aucune date confirmée à venir pour cette résidence.
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                      {artistHighlighted.statusLabel}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-sm text-slate-600">
-                  Aucune programmation active pour le moment.
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-2xl border p-4 space-y-3 bg-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold">Mon profil artiste</h2>
-                <Link href="/artist/profile" className="btn btn-primary">
-                  Modifier mon profil
+                ) : (
+                  <ul className="space-y-2">
+                    {artistNextDates.map((d) => (
+                      <li key={d.key} className="flex items-center justify-between text-sm">
+                        <span>{d.label}</span>
+                        <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                          {d.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <div className="text-sm text-slate-600">
+                Aucune prestation confirmée à venir.{' '}
+                <Link href="/artist/programmations" className="underline text-[var(--brand)]">
+                  Consulte les programmations ouvertes
                 </Link>
+                .
               </div>
+            )}
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <div className="font-medium">
-                    {artist?.stage_name || 'Nom de scène non renseigné'}
-                  </div>
-                  {artist?.is_active ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
-                      Actif
-                    </span>
-                  ) : (
-                    <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                      Inactif
-                    </span>
-                  )}
-                </div>
-
-                <div className="text-sm text-slate-600">
-                  Formations : {artist?.formations?.length ? artist.formations.join(', ') : '—'}
-                </div>
-
-                <ProfileProgress artist={artist} />
-              </div>
-            </section>
-          </div>
-
-          {artistNextDates.length === 0 && artistActions.length === 0 ? (
-            <section className="rounded-2xl border bg-white p-5 text-sm text-slate-600">
-              Rien à traiter pour le moment.
-            </section>
-          ) : (
-            <section className="rounded-2xl border bg-white p-5 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold">Mes prochaines dates</h3>
-                {artistHighlighted ? (
-                  <Link
-                    href={artistHighlighted.href}
-                    className="text-sm underline text-[var(--brand)]"
-                  >
-                    Voir la programmation
-                  </Link>
-                ) : null}
-              </div>
-              {artistNextDates.length === 0 ? (
-                <p className="text-sm text-slate-600">
-                  Aucune date à afficher pour le moment.
-                </p>
-              ) : (
+            {artistInvites.length > 0 ? (
+              <div className="rounded-xl border p-4 space-y-2">
+                <div className="font-semibold">Événements ponctuels</div>
                 <ul className="space-y-2">
-                  {artistNextDates.map((d) => (
-                    <li key={d.key} className="flex items-center justify-between gap-2 text-sm">
-                      <span>{d.label}</span>
-                      <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
-                        {d.status}
-                      </span>
+                  {artistInvites.slice(0, 3).map((inv) => (
+                    <li key={inv.id} className="flex items-center justify-between text-sm">
+                      <span>{inv.booking_requests?.title ?? 'Invitation'}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                          Invitation reçue
+                        </span>
+                        <Link href={`/artist/requests/${inv.request_id}`} className="btn">
+                          Voir le détail
+                        </Link>
+                      </div>
                     </li>
                   ))}
                 </ul>
-              )}
-            </section>
-          )}
+              </div>
+            ) : null}
+          </section>
         </section>
       )}
 
       {/* ======== ADMIN ======== */}
       {role === 'admin' && (
         <section className="space-y-6">
-          <section className="rounded-2xl border bg-white p-5 space-y-4">
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-1">
-                <h2 className="text-lg font-semibold">Programmation à suivre</h2>
-                {adminHighlighted ? (
-                  <div className="space-y-1">
-                    <div className="text-lg font-semibold">{adminHighlighted.name}</div>
-                    <div className="text-sm text-slate-600">
-                      {adminHighlighted.clientName ? `${adminHighlighted.clientName} • ` : ''}
-                      {adminHighlighted.periodLabel ||
-                        `${fmtDateFR(adminHighlighted.start_date)} → ${fmtDateFR(
-                          adminHighlighted.end_date
-                        )}`}
-                    </div>
-                    <div className="text-sm text-slate-600">
-                      Statut : {adminHighlighted.is_open ? 'Ouverte' : 'Confirmée'}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-sm text-slate-600">
-                    Aucune programmation pour le moment.
-                  </div>
-                )}
-              </div>
-              {adminHighlighted ? (
-                <Link href={`/admin/programmations/${adminHighlighted.id}`} className="btn btn-primary">
-                  Ouvrir la programmation
-                </Link>
-              ) : (
-                <Link href="/admin/programmations" className="btn btn-primary">
-                  Créer une programmation
-                </Link>
-              )}
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-2xl font-bold">Administration</h2>
+            <div className="relative">
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowCreateMenu((prev) => !prev)}
+              >
+                Créer
+              </button>
+              {showCreateMenu ? (
+                <div className="absolute right-0 mt-2 w-56 rounded-xl border bg-white shadow-lg z-10">
+                  <Link
+                    href="/admin/requests/new"
+                    className="block px-3 py-2 text-sm hover:bg-slate-50"
+                    onClick={() => setShowCreateMenu(false)}
+                  >
+                    Demande ponctuelle
+                  </Link>
+                  <Link
+                    href="/admin/programmations"
+                    className="block px-3 py-2 text-sm hover:bg-slate-50"
+                    onClick={() => setShowCreateMenu(false)}
+                  >
+                    Programmation / Résidence
+                  </Link>
+                </div>
+              ) : null}
             </div>
-            {adminHighlighted ? (
-              <div className="grid md:grid-cols-4 gap-3">
-                <div className="rounded-xl border p-3 bg-slate-50">
-                  <div className="text-xs text-slate-500">Total</div>
-                  <div className="text-lg font-semibold">{adminHighlighted.totalCount}</div>
-                </div>
-                <div className="rounded-xl border p-3 bg-slate-50">
-                  <div className="text-xs text-slate-500">Confirmées</div>
-                  <div className="text-lg font-semibold">{adminHighlighted.confirmedCount}</div>
-                </div>
-                <div className="rounded-xl border p-3 bg-slate-50">
-                  <div className="text-xs text-slate-500">En attente</div>
-                  <div className="text-lg font-semibold">{adminHighlighted.pendingCount}</div>
-                </div>
-                <div className="rounded-xl border p-3 bg-slate-50">
-                  <div className="text-xs text-slate-500">Sans artiste</div>
-                  <div className="text-lg font-semibold">{adminHighlighted.emptyCount}</div>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold">À traiter</h3>
-            <ActionsRequiredList actions={adminActions} />
           </div>
 
+          <section className="grid md:grid-cols-4 gap-3">
+            <Link href="/admin/requests" className="rounded-2xl border bg-white p-4 block">
+              <div className="text-sm text-slate-500">Demandes ouvertes</div>
+              <div className="text-3xl font-semibold">{adminKpis.requestsOpen}</div>
+            </Link>
+            <Link href="/admin/requests" className="rounded-2xl border bg-white p-4 block">
+              <div className="text-sm text-slate-500">Propositions en attente</div>
+              <div className="text-3xl font-semibold">{adminKpis.proposalsPending}</div>
+            </Link>
+            <Link href="/admin/programmations" className="rounded-2xl border bg-white p-4 block">
+              <div className="text-sm text-slate-500">Semaines à remplir</div>
+              <div className="text-3xl font-semibold">{adminKpis.weeksToFill}</div>
+            </Link>
+            <Link href="/admin/calendar" className="rounded-2xl border bg-white p-4 block">
+              <div className="text-sm text-slate-500">Prestations à venir (30 j)</div>
+              <div className="text-3xl font-semibold">{adminKpis.upcomingCount}</div>
+            </Link>
+          </section>
+
           <section className="rounded-2xl border bg-white p-5 space-y-3">
-            <h3 className="text-lg font-semibold">Actions rapides</h3>
-            <QuickLinks
-              items={[
-                { href: '/admin/programmations', label: 'Créer une programmation' },
-                { href: '/admin/requests', label: 'Voir les demandes' },
-                { href: '/admin/calendar', label: 'Agenda' },
-              ]}
-            />
+            <h3 className="text-lg font-semibold">À traiter</h3>
+            {adminActions.length === 0 && adminOpenWeeks.length === 0 ? (
+              <div className="text-sm text-slate-600">Aucune action urgente.</div>
+            ) : (
+              <ul className="space-y-2">
+                {adminActions.slice(0, 6).map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-3 text-sm">
+                    <div>
+                      <div className="font-medium">{a.title}</div>
+                      <div className="text-xs text-slate-500">{a.description}</div>
+                    </div>
+                    <Link href={a.href} className="btn">
+                      Ouvrir
+                    </Link>
+                  </li>
+                ))}
+                {adminOpenWeeks.slice(0, 4).map((w) => {
+                  const res = w.residencies?.[0];
+                  const clientName = res?.clients?.[0]?.name ?? '';
+                  return (
+                    <li key={w.id} className="flex items-center justify-between gap-3 text-sm">
+                      <div>
+                        <div className="font-medium">
+                          Semaine à remplir • {fmtDateFR(w.start_date_sun)}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {res?.name ?? 'Programmation'}
+                          {clientName ? ` • ${clientName}` : ''}
+                        </div>
+                      </div>
+                      <Link
+                        href={res?.id ? `/admin/programmations/${res.id}` : '/admin/programmations'}
+                        className="btn"
+                      >
+                        Voir
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className="rounded-2xl border bg-white p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Prochaines prestations</h3>
+              <Link href="/admin/calendar" className="text-sm underline text-[var(--brand)]">
+                Ouvrir l’agenda
+              </Link>
+            </div>
+            {adminUpcoming.length === 0 ? (
+              <p className="text-sm text-slate-600">Aucune prestation à venir.</p>
+            ) : (
+              <ul className="space-y-2">
+                {adminUpcoming.map((u) => (
+                  <li key={u.id} className="flex items-center justify-between text-sm">
+                    <div>
+                      <div className="font-medium">{u.title}</div>
+                      <div className="text-xs text-slate-500">
+                        {fmtDateFR(u.date)} • {u.subtitle || 'Programmation'}
+                      </div>
+                    </div>
+                    <Link href={u.href} className="btn">
+                      Ouvrir
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="rounded-2xl border bg-white p-5 space-y-3">
@@ -1072,6 +1289,12 @@ export default function DashboardPage() {
                         {res.clientName ? `${res.clientName} • ` : ''}
                         {res.periodLabel}
                       </div>
+                      {adminHighlighted?.id === res.id ? (
+                        <div className="text-xs text-slate-500">
+                          {adminHighlighted.confirmedCount}/{adminHighlighted.totalCount} confirmées •{' '}
+                          {adminHighlighted.pendingCount} en attente
+                        </div>
+                      ) : null}
                     </div>
                     <Link href={`/admin/programmations/${res.id}`} className="btn">
                       Ouvrir
@@ -1080,6 +1303,68 @@ export default function DashboardPage() {
                 ))}
               </ul>
             )}
+          </section>
+
+          <section className="grid md:grid-cols-2 gap-4">
+            <div className="rounded-2xl border bg-white p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Demandes récentes</h3>
+                <Link href="/admin/requests" className="text-sm underline text-[var(--brand)]">
+                  Voir tout
+                </Link>
+              </div>
+              {adminRequests.length === 0 ? (
+                <p className="text-sm text-slate-600">Aucune demande récente.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {adminRequests.slice(0, 3).map((r) => (
+                    <li key={r.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <div className="font-medium">{r.title || 'Demande'}</div>
+                        <div className="text-xs text-slate-500">{statusFR(r.status)}</div>
+                      </div>
+                      <Link href={`/admin/requests/${r.id}`} className="btn">
+                        Ouvrir
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-2xl border bg-white p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Propositions récentes</h3>
+                <Link href="/admin/requests" className="text-sm underline text-[var(--brand)]">
+                  Voir tout
+                </Link>
+              </div>
+              {adminProposals.length === 0 ? (
+                <p className="text-sm text-slate-600">Aucune proposition récente.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {adminProposals.slice(0, 3).map((p) => (
+                    <li key={p.id} className="flex items-center justify-between text-sm">
+                      <div>
+                        <div className="font-medium">
+                          {p.booking_requests?.title || 'Proposition'}
+                        </div>
+                        <div className="text-xs text-slate-500">{statusFR(p.status)}</div>
+                      </div>
+                      <Link
+                        href={
+                          p.booking_requests?.id
+                            ? `/admin/requests/${p.booking_requests.id}`
+                            : '/admin/requests'
+                        }
+                        className="btn"
+                      >
+                        Ouvrir
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </section>
         </section>
       )}
