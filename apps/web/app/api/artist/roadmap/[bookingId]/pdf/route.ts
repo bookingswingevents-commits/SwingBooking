@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { getArtistIdentity } from '@/lib/artistIdentity';
 import { buildRoadmapData, roadmapToLines } from '@/lib/roadmap';
@@ -14,9 +14,12 @@ function mapWeekType(value?: string | null) {
   return null;
 }
 
-export async function GET(req: Request, context: { params: { bookingId: string } }) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ bookingId: string }> }
+) {
   try {
-    const bookingId = context.params?.bookingId;
+    const { bookingId } = await params;
     if (!bookingId) {
       return NextResponse.json({ ok: false, error: 'BOOKING_ID_REQUIRED' }, { status: 400 });
     }
