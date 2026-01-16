@@ -2,6 +2,8 @@ export type ProgramType = 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 
 export type ProgrammingProgram = {
   id: string;
+  title: string;
+  name?: string;
   program_type: ProgramType;
   is_public?: boolean;
   is_open?: boolean;

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export async function fetchPublishedPrograms(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('programming_programs')
-    .select('id, name, program_type, status')
+    .select('id, title, program_type, status')
     .eq('status', 'PUBLISHED')
     .order('created_at', { ascending: false });
   if (error) throw error;
@@ -13,7 +13,7 @@ export async function fetchPublishedPrograms(supabase: SupabaseClient) {
 export async function fetchProgram(supabase: SupabaseClient, programId: string) {
   const { data, error } = await supabase
     .from('programming_programs')
-    .select('id, name, program_type, status, conditions_json')
+    .select('id, title, program_type, status, conditions_json')
     .eq('id', programId)
     .maybeSingle();
   if (error) throw error;
@@ -43,7 +43,7 @@ export async function fetchArtistApplications(supabase: SupabaseClient, artistId
 export async function fetchArtistBookings(supabase: SupabaseClient, artistId: string) {
   const { data, error } = await supabase
     .from('programming_bookings')
-    .select('id, item_id, status, programming_items(id, program_id, start_date, end_date, programming_programs(name))')
+    .select('id, item_id, status, programming_items(id, program_id, start_date, end_date, programming_programs(title))')
     .eq('artist_id', artistId)
     .order('created_at', { ascending: false });
   if (error) throw error;

@@ -5,7 +5,7 @@ import { createSnapshot } from './snapshot';
 describe('createSnapshot', () => {
   it('merges program, item, application, and artist data', () => {
     const snapshot = createSnapshot({
-      program: { id: 'prog', program_type: 'MULTI_DATES', conditions_json: { fees: { options: [] } } },
+      program: { id: 'prog', title: 'Programme', program_type: 'MULTI_DATES', conditions_json: { fees: { options: [] } } },
       item: {
         id: 'item',
         program_id: 'prog',
