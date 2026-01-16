@@ -335,13 +335,18 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
               {filteredItems.map((item) => (
                 <div key={item.id} className="flex items-center justify-between p-3 text-sm">
                   <div>{item.start_date}</div>
-                  <form action={removeItemAction}>
-                    <input type="hidden" name="program_id" value={program.id} />
-                    <input type="hidden" name="item_id" value={item.id} />
-                    <button className="btn" type="submit">
-                      Supprimer
-                    </button>
-                  </form>
+                  <div className="flex items-center gap-2">
+                    <Link href={`/admin/programming/items/${item.id}`} className="btn">
+                      Candidatures
+                    </Link>
+                    <form action={removeItemAction}>
+                      <input type="hidden" name="program_id" value={program.id} />
+                      <input type="hidden" name="item_id" value={item.id} />
+                      <button className="btn" type="submit">
+                        Supprimer
+                      </button>
+                    </form>
+                  </div>
                 </div>
               ))}
             </div>
@@ -394,6 +399,9 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                         Mettre a jour
                       </button>
                     </form>
+                    <Link href={`/admin/programming/items/${item.id}`} className="btn">
+                      Candidatures
+                    </Link>
                     <form action={removeItemAction}>
                       <input type="hidden" name="program_id" value={program.id} />
                       <input type="hidden" name="item_id" value={item.id} />

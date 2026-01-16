@@ -65,6 +65,36 @@ export default async function AdminProgrammingDetailPage({
       </section>
 
       <section className="rounded-xl border p-4 space-y-2">
+        <div className="text-sm font-medium">Calendrier</div>
+        <div className="text-sm text-slate-600">
+          Ajouter des dates ou generer les semaines.
+        </div>
+        <Link href={`/admin/programming/${program.id}/calendar`} className="btn btn-primary w-fit">
+          Ouvrir le calendrier
+        </Link>
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-2">
+        <div className="text-sm font-medium">Conditions</div>
+        <div className="text-sm text-slate-600">
+          Configurer les modules sans regle imposee.
+        </div>
+        <Link href={`/admin/programming/${program.id}/conditions`} className="btn btn-primary w-fit">
+          Editer les conditions
+        </Link>
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-2">
+        <div className="text-sm font-medium">Candidatures</div>
+        <div className="text-sm text-slate-600">
+          Suivi des candidatures par item.
+        </div>
+        <Link href={`/admin/programming/${program.id}/applications`} className="btn btn-primary w-fit">
+          Voir les candidatures
+        </Link>
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-2">
         <div className="text-sm font-medium">Etapes suivantes</div>
         <div className="text-sm text-slate-600">
           Les dates, conditions et feuilles de route seront ajoutees dans les prochaines etapes.
