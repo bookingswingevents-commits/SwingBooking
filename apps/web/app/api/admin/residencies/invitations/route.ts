@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   try {
     if (LEGACY_RESIDENCIES_DISABLED) {
       return NextResponse.json(
-        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
-        { status: 503 }
+        { ok: false, error: 'Legacy residencies disabled' },
+        { status: 410 }
       );
     }
     const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL');
@@ -146,7 +146,6 @@ export async function POST(req: Request) {
             artist_name: stageName,
             artist_email: email,
           },
-          created_by: user.id,
         })
         .select('id')
         .maybeSingle();

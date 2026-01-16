@@ -26,7 +26,7 @@ function SubmitButton() {
   const { pending } = useFormStatus();
   return (
     <button type="submit" className="btn btn-primary" disabled={pending}>
-      {pending ? 'Creation...' : 'Creer la programmation'}
+      {pending ? 'Création...' : 'Créer la programmation'}
     </button>
   );
 }
@@ -96,7 +96,7 @@ export default function ProgrammingForm({ clients, action }: Props) {
           value={fields.program_type}
           onChange={(e) => setFields((prev) => ({ ...prev, program_type: e.target.value }))}
         >
-          <option value="WEEKLY_RESIDENCY">Residence hebdomadaire</option>
+          <option value="WEEKLY_RESIDENCY">Résidence hebdomadaire</option>
           <option value="MULTI_DATES">Dates multiples</option>
         </select>
       </div>

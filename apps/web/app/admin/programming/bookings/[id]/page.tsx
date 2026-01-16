@@ -72,7 +72,7 @@ export default async function AdminProgrammingBookingPage({ params }: PageProps)
   const roadmap = generateRoadmap({
     program: {
       id: program.id,
-      title: program.title ?? (program as any).name ?? 'Programmation',
+      title: program.title ?? 'Programmation',
       program_type: program.program_type,
       conditions_json: program.conditions_json ?? {},
     },
@@ -100,7 +100,7 @@ export default async function AdminProgrammingBookingPage({ params }: PageProps)
     <div className="max-w-4xl mx-auto space-y-6">
       <header className="flex items-start justify-between gap-3">
         <RoadmapHeader
-          title={program.title ?? (program as any).name ?? 'Programmation'}
+          title={program.title ?? 'Programmation'}
           period={`${item.start_date} → ${item.end_date}`}
           artistName={artistRow?.stage_name ?? null}
         />

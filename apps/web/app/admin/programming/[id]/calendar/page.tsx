@@ -62,7 +62,7 @@ function overlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
 }
 
 function labelProgramType(value?: string | null) {
-  return value === 'WEEKLY_RESIDENCY' ? 'Residence hebdomadaire' : 'Dates multiples';
+  return value === 'WEEKLY_RESIDENCY' ? 'Résidence hebdomadaire' : 'Dates multiples';
 }
 
 async function loadItems(programId: string) {
@@ -303,7 +303,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
         </Link>
         <h1 className="text-2xl font-bold">Calendrier</h1>
         <p className="text-sm text-slate-600">
-          {program.title ?? (program as any).name ?? 'Programmation'} • {labelProgramType(program.program_type)}
+          {program.title ?? 'Programmation'} • {labelProgramType(program.program_type)}
         </p>
       </header>
 

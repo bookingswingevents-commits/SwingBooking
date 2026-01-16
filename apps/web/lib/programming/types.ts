@@ -2,13 +2,12 @@ export type ProgramType = 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 
 export type ProgrammingProgram = {
   id: string;
-  title: string;
-  name?: string;
-  program_type: ProgramType;
+  title: string | null;
+  program_type: string;
+  conditions_json: any;
   is_public?: boolean;
   is_open?: boolean;
   status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
-  conditions_json: Record<string, any>;
 };
 
 export type ProgrammingItem = {

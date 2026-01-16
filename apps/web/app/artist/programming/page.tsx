@@ -7,7 +7,7 @@ import ItemRow from '@/components/programming/ItemRow';
 export const dynamic = 'force-dynamic';
 
 function labelProgramType(value?: string | null) {
-  return value === 'WEEKLY_RESIDENCY' ? 'Residence hebdomadaire' : 'Dates multiples';
+  return value === 'WEEKLY_RESIDENCY' ? 'Résidence hebdomadaire' : 'Dates multiples';
 }
 
 async function ensureArtist() {
@@ -75,7 +75,7 @@ export default async function ArtistProgrammingPage() {
           {programs.map((program) => (
             <Link key={program.id} href={`/artist/programming/${program.id}`}>
               <ItemRow
-                title={program.title ?? (program as any).name ?? 'Programmation'}
+                title={program.title ?? 'Programmation'}
                 subtitle={labelProgramType(program.program_type)}
                 status={program.status ?? 'PUBLISHED'}
               />

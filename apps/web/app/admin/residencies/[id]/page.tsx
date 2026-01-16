@@ -1712,7 +1712,9 @@ export default function AdminResidencyDetailPage({
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-semibold">Remuneration</h2>
               <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>Programme: {editProgramType === 'MULTI_DATES' ? 'DPF' : 'L2A'}</span>
+                <span>
+                  Programmation: {editProgramType === 'MULTI_DATES' ? 'Dates multiples' : 'Résidence hebdomadaire'}
+                </span>
               </div>
             </div>
 
@@ -2305,8 +2307,8 @@ export default function AdminResidencyDetailPage({
                 value={editProgramType}
                 onChange={(e) => setEditProgramType(e.target.value as ProgramType)}
               >
-                <option value="WEEKLY_RESIDENCY">Residences hebdo (L2A)</option>
-                <option value="MULTI_DATES">Multi dates (DPF)</option>
+                <option value="WEEKLY_RESIDENCY">Résidence hebdomadaire</option>
+                <option value="MULTI_DATES">Dates multiples</option>
               </select>
             </div>
             <div className="flex flex-wrap gap-2">

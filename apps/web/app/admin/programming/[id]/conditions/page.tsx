@@ -83,7 +83,7 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
   }
 
   const onSave = saveConditions.bind(null, program.id);
-  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
+  const displayTitle = program.title ?? 'Programmation';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

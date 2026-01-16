@@ -76,7 +76,7 @@ async function confirmBooking(programId: string, formData: FormData) {
   const snapshot = createSnapshot({
     program: {
       id: program.id,
-      title: program.title ?? (program as any).name ?? 'Programmation',
+      title: program.title ?? 'Programmation',
       program_type: program.program_type ?? 'MULTI_DATES',
       conditions_json: program.conditions_json ?? {},
     },
@@ -179,7 +179,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
   (bookingsRes.data ?? []).forEach((bk) => bookingMap.set(bk.item_id, bk.artist_id));
 
   const onConfirm = confirmBooking.bind(null, program.id);
-  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
+  const displayTitle = program.title ?? 'Programmation';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">

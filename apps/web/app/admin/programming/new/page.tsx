@@ -43,7 +43,6 @@ async function createProgrammingAction(
       program_type,
       status: 'DRAFT',
       conditions_json: {},
-      created_by: user.id,
     })
     .select('id, title')
     .maybeSingle();
@@ -83,7 +82,7 @@ export default async function AdminProgrammingNewPage() {
           ← Retour
         </Link>
         <h1 className="text-2xl font-bold">Nouvelle programmation</h1>
-        <p className="text-sm text-slate-600">Creation rapide en mode brouillon.</p>
+        <p className="text-sm text-slate-600">Création rapide en mode brouillon.</p>
       </header>
 
       <ProgrammingForm clients={(clients ?? []) as Array<{ id: string; name: string }>} action={createProgrammingAction} />

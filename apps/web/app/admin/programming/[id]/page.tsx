@@ -5,7 +5,7 @@ import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 export const dynamic = 'force-dynamic';
 
 function labelProgramType(value?: string | null) {
-  return value === 'WEEKLY_RESIDENCY' ? 'Residence hebdomadaire' : 'Dates multiples';
+  return value === 'WEEKLY_RESIDENCY' ? 'Résidence hebdomadaire' : 'Dates multiples';
 }
 
 export default async function AdminProgrammingDetailPage({
@@ -50,7 +50,7 @@ export default async function AdminProgrammingDetailPage({
   const clientName = Array.isArray(program.clients)
     ? program.clients[0]?.name
     : (program.clients as any)?.name;
-  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
+  const displayTitle = program.title ?? 'Programmation';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

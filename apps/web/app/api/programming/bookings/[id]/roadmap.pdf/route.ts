@@ -68,7 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const roadmap = generateRoadmap({
       program: {
         id: program.id,
-        title: program.title ?? (program as any).name ?? 'Programmation',
+        title: program.title ?? 'Programmation',
         program_type: program.program_type,
         conditions_json: program.conditions_json ?? {},
       },
@@ -94,7 +94,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const pdf = buildRoadmapPdf(
       {
-        title: program.title ?? (program as any).name ?? 'Roadmap',
+        title: program.title ?? 'Roadmap',
         artistName: artistRow?.stage_name ?? null,
         period: `${item.start_date} → ${item.end_date}`,
       },

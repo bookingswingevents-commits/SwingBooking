@@ -18,8 +18,8 @@ export async function POST(req: Request) {
   try {
     if (LEGACY_RESIDENCIES_DISABLED) {
       return NextResponse.json(
-        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
-        { status: 503 }
+        { ok: false, error: 'Legacy residencies disabled' },
+        { status: 410 }
       );
     }
     const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL');
@@ -123,7 +123,6 @@ export async function POST(req: Request) {
         lodging_included: body?.lodging_included ?? true,
         meals_included: body?.meals_included ?? true,
         companion_included: body?.companion_included ?? true,
-        created_by: user.id,
         mode,
         program_type: mode === 'DATES' ? 'MULTI_DATES' : 'WEEKLY_RESIDENCY',
         conditions_json: baseConditions,
