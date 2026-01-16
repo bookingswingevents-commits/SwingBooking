@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: { error?: string; success?: string };
+  searchParams?: Promise<{ error?: string; success?: string }>;
 };
 
 type ConditionsPayload = {
@@ -48,6 +48,7 @@ async function saveConditions(programId: string, formData: FormData) {
 
 export default async function AdminProgrammingConditionsPage({ params, searchParams }: PageProps) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
   const supabase = await createSupabaseServerClient();
   const { user, isAdmin } = await getAdminAuth(supabase);
   if (!user) redirect('/login');
@@ -93,14 +94,14 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
         <p className="text-sm text-slate-600">{program.name}</p>
       </header>
 
-      {searchParams?.error ? (
+      {sp.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
-          {searchParams.error}
+          {sp.error}
         </div>
       ) : null}
-      {searchParams?.success ? (
+      {sp.success ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700 text-sm">
-          {searchParams.success}
+          {sp.success}
         </div>
       ) : null}
 

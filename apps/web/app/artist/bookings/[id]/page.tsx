@@ -141,7 +141,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
             target="_blank"
             rel="noreferrer"
           >
-            Telecharger PDF
+            Download PDF
           </a>
           <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
             ← Retour
@@ -155,6 +155,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
         <RoadmapSection title="Lieux" items={roadmap.venues} />
         <RoadmapSection title="Logement" items={roadmap.lodging} />
         <RoadmapSection title="Repas" items={roadmap.meals} />
+        <RoadmapSection title="Acces" items={roadmap.access} />
         <RoadmapSection title="Logistique" items={roadmap.logistics} />
         <RoadmapSection title="Contacts" items={roadmap.contacts} />
       </section>

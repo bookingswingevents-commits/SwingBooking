@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 type CalendarPageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: { error?: string; success?: string };
+  searchParams?: Promise<{ error?: string; success?: string }>;
 };
 
 type ProgramRow = {
@@ -248,6 +248,7 @@ async function updateWeekTypeAction(formData: FormData) {
 
 export default async function AdminProgrammingCalendarPage({ params, searchParams }: CalendarPageProps) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
   const supabase = await createSupabaseServerClient();
   const { user, isAdmin } = await getAdminAuth(supabase);
   if (!user) redirect('/login');
@@ -302,14 +303,14 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
         </p>
       </header>
 
-      {searchParams?.error ? (
+      {sp.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
-          {searchParams.error}
+          {sp.error}
         </div>
       ) : null}
-      {searchParams?.success ? (
+      {sp.success ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700 text-sm">
-          {searchParams.success}
+          {sp.success}
         </div>
       ) : null}
 

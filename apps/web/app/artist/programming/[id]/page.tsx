@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams?: { error?: string; success?: string };
+  searchParams?: Promise<{ error?: string; success?: string }>;
 };
 
 type OptionPayload = { label?: string; amount_cents?: number };
@@ -104,6 +104,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
 
 export default async function ArtistProgrammingItemsPage({ params, searchParams }: PageProps) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -165,14 +166,14 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
         <p className="text-sm text-slate-600">Items disponibles</p>
       </header>
 
-      {searchParams?.error ? (
+      {sp.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
-          {searchParams.error}
+          {sp.error}
         </div>
       ) : null}
-      {searchParams?.success ? (
+      {sp.success ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700 text-sm">
-          {searchParams.success}
+          {sp.success}
         </div>
       ) : null}
 

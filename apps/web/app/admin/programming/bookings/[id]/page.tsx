@@ -114,6 +114,7 @@ export default async function AdminProgrammingBookingPage({ params }: PageProps)
         <RoadmapSection title="Lieux" items={roadmap.venues} />
         <RoadmapSection title="Logement" items={roadmap.lodging} />
         <RoadmapSection title="Repas" items={roadmap.meals} />
+        <RoadmapSection title="Acces" items={roadmap.access} />
         <RoadmapSection title="Logistique" items={roadmap.logistics} />
         <RoadmapSection title="Contacts" items={roadmap.contacts} />
       </section>
