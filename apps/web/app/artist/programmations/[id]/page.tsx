@@ -16,6 +16,8 @@ type ResidencyRow = {
   start_date: string;
   end_date: string;
   terms_mode?: 'SIMPLE_FEE' | 'INCLUDED' | 'WEEKLY' | 'RESIDENCY_WEEKLY' | null;
+  program_type?: 'MULTI_DATES' | 'WEEKLY_RESIDENCY' | null;
+  conditions_json?: any | null;
   fee_amount_cents?: number | null;
   fee_currency?: string | null;
   fee_is_net?: boolean | null;
@@ -150,7 +152,7 @@ export default function ArtistProgrammationDetailPage({
           supabase
             .from('residencies')
             .select(
-              'id, name, mode, start_date, end_date, terms_mode, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
+              'id, name, mode, start_date, end_date, terms_mode, program_type, conditions_json, fee_amount_cents, fee_currency, fee_is_net, lodging_included, meals_included, companion_included, is_public, is_open, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
             )
             .eq('id', residencyId)
             .maybeSingle(),
@@ -366,6 +368,53 @@ export default function ArtistProgrammationDetailPage({
   const mapsUrl = resolvedAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
     : null;
+  const programType =
+    residency.program_type ?? (residency.mode === 'DATES' ? 'MULTI_DATES' : 'WEEKLY_RESIDENCY');
+  const conditions = (residency.conditions_json ?? {}) as any;
+  const remuneration = conditions.remuneration ?? {};
+  const currency = remuneration.currency ?? residency.fee_currency ?? 'EUR';
+  const suffix = remuneration.is_net === false || residency.fee_is_net === false ? 'brut' : 'net';
+  const hasConfirmedWeek = weeks.some((w) =>
+    toArray(w.week_bookings).some(
+      (b) => b.status === 'CONFIRMED' && (!artistId || b.artist_id === artistId)
+    )
+  );
+  const hasConfirmedDate = dateApplications.some((a) => a.status === 'CONFIRMED');
+  const canShowSensitive = hasConfirmedWeek || hasConfirmedDate;
+
+  const remunerationLines: string[] = [];
+  if (programType === 'MULTI_DATES') {
+    if (remuneration?.per_date?.artist_choice && remuneration?.per_date?.options?.length) {
+      remuneration.per_date.options.forEach((opt: any) => {
+        if (!opt?.label) return;
+        const amount = typeof opt.amount_cents === 'number' ? formatMoney(opt.amount_cents, currency) : '—';
+        remunerationLines.push(`${opt.label} : ${amount} (${suffix})`);
+      });
+    } else if (typeof remuneration?.per_date?.amount_cents === 'number') {
+      remunerationLines.push(
+        `Cachet par date : ${formatMoney(remuneration.per_date.amount_cents, currency)} (${suffix})`
+      );
+    }
+  } else if (remuneration?.per_week) {
+    const calm = remuneration.per_week.calm;
+    const peak = remuneration.per_week.peak;
+    if (calm) {
+      const feeLabel = typeof calm.fee_cents === 'number' ? formatMoney(calm.fee_cents, currency) : '—';
+      remunerationLines.push(
+        `Semaine calme : ${calm.performances_count ?? '—'} prestations • ${feeLabel} (${suffix})`
+      );
+    }
+    if (peak) {
+      const feeLabel = typeof peak.fee_cents === 'number' ? formatMoney(peak.fee_cents, currency) : '—';
+      remunerationLines.push(
+        `Semaine forte : ${peak.performances_count ?? '—'} prestations • ${feeLabel} (${suffix})`
+      );
+    }
+  }
+
+  const confirmedBooking = weeks
+    .flatMap((w) => toArray(w.week_bookings).map((b) => ({ week: w, booking: b })))
+    .find((row) => row.booking.status === 'CONFIRMED' && (!artistId || row.booking.artist_id === artistId));
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -381,30 +430,49 @@ export default function ArtistProgrammationDetailPage({
 
       <section className="rounded-xl border p-4 space-y-2">
         <h2 className="font-semibold">Conditions</h2>
-        {residency.terms_mode === 'SIMPLE_FEE' ? (
+        {remunerationLines.length === 0 ? (
+          <div className="text-sm text-slate-600">Cachet non renseigne.</div>
+        ) : (
+          <div className="space-y-1 text-sm text-slate-600">
+            {remunerationLines.map((line, idx) => (
+              <div key={`rem-${idx}`}>{line}</div>
+            ))}
+          </div>
+        )}
+        {canShowSensitive ? (
           <div className="text-sm text-slate-600">
-            Cachet :{' '}
-            {typeof residency.fee_amount_cents === 'number'
-              ? formatMoney(residency.fee_amount_cents, residency.fee_currency ?? 'EUR')
-              : '—'}{' '}
-            ({residency.fee_is_net === false ? 'brut' : 'net'})
+            {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'} •{' '}
+            {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
+            {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
           </div>
         ) : (
-          <>
-            <div className="text-sm text-slate-600">
-              {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'} •{' '}
-              {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'} •{' '}
-              {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
-            </div>
-            <div className="text-sm text-slate-600">
-              Semaine calme: 2 prestations • 1 cachet (150€ net)
-            </div>
-            <div className="text-sm text-slate-600">
-              Semaine forte: 4 prestations • 2 cachets (300€ net)
-            </div>
-          </>
+          <div className="text-xs text-slate-500">
+            Les informations sensibles (logement, repas, contacts) seront visibles une fois la programmation confirmée.
+          </div>
         )}
       </section>
+
+      {confirmedBooking ? (
+        <section className="rounded-xl border p-4 space-y-2">
+          <h2 className="font-semibold">Feuille de route</h2>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/artist/roadmaps/residencies/${confirmedBooking.week.id}`}
+              className="btn btn-primary"
+            >
+              Voir la feuille de route
+            </Link>
+            <a
+              className="btn"
+              href={`/api/artist/roadmap/${confirmedBooking.booking.id}/pdf`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Exporter PDF
+            </a>
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border p-4 space-y-3">
         <h2 className="font-semibold">Lieu de la prestation</h2>

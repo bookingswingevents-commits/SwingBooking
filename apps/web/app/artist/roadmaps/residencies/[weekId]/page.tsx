@@ -6,27 +6,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { getArtistIdentity } from '@/lib/artistIdentity';
-
-type RoadmapEntry = { label: string; value: string };
-type RoadmapScheduleEntry = { day: string; time: string; place: string; notes?: string };
-
-type RoadmapContent = {
-  intro?: string;
-  contacts?: RoadmapEntry[];
-  addresses?: RoadmapEntry[];
-  access?: RoadmapEntry[];
-  lodging?: RoadmapEntry[];
-  meals?: RoadmapEntry[];
-  schedule?: RoadmapScheduleEntry[];
-  logistics?: RoadmapEntry[];
-  notes?: string;
-};
-
-type RoadmapTemplate = {
-  id: string;
-  title: string;
-  content: RoadmapContent;
-};
+import RoadmapPreview from '@/components/RoadmapPreview';
+import { buildRoadmapData, ConditionsJson, RoadmapOverrides } from '@/lib/roadmap';
 
 type WeekRow = {
   id: string;
@@ -37,21 +18,21 @@ type WeekRow = {
   residencies: {
     id: string;
     name: string;
+    program_type?: 'MULTI_DATES' | 'WEEKLY_RESIDENCY' | null;
+    conditions_json?: ConditionsJson | null;
+    roadmap_overrides_json?: RoadmapOverrides | null;
     clients?: { name: string }[] | null;
   }[] | null;
 };
 
-function renderList(items?: RoadmapEntry[]) {
-  if (!items || items.length === 0) return null;
-  return (
-    <ul className="space-y-1 text-sm text-slate-700">
-      {items.map((it, idx) => (
-        <li key={`${it.label}-${idx}`}>
-          <span className="font-medium">{it.label} :</span> {it.value}
-        </li>
-      ))}
-    </ul>
-  );
+type BookingRow = {
+  id: string;
+};
+
+function mapWeekType(value?: string | null) {
+  if (value === 'strong') return 'PEAK' as const;
+  if (value === 'calm') return 'CALM' as const;
+  return null;
 }
 
 export default function ArtistResidencyRoadmapPage() {
@@ -61,7 +42,7 @@ export default function ArtistResidencyRoadmapPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [week, setWeek] = useState<WeekRow | null>(null);
-  const [template, setTemplate] = useState<RoadmapTemplate | null>(null);
+  const [booking, setBooking] = useState<BookingRow | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -79,16 +60,16 @@ export default function ArtistResidencyRoadmapPage() {
           return;
         }
 
-        const { data: booking } = await supabase
+        const { data: bookingRow } = await supabase
           .from('week_bookings')
           .select(
-            'id, status, residency_week_id, residency_weeks!inner(id, start_date_sun, end_date_sun, week_type, status, residencies(id, name, clients(name)))'
+            'id, status, residency_week_id, residency_weeks!inner(id, start_date_sun, end_date_sun, week_type, status, residencies(id, name, program_type, conditions_json, roadmap_overrides_json, clients(name)))'
           )
           .eq('artist_id', identity.artistId)
           .eq('status', 'CONFIRMED')
           .eq('residency_week_id', weekId)
           .maybeSingle();
-        const wk = booking?.residency_weeks?.[0] ?? null;
+        const wk = bookingRow?.residency_weeks?.[0] ?? null;
         if (!wk) {
           setError('Aucune feuille de route disponible pour cette semaine.');
           return;
@@ -98,19 +79,7 @@ export default function ArtistResidencyRoadmapPage() {
           return;
         }
         setWeek(wk);
-
-        const residency = wk.residencies?.[0] ?? null;
-        const residencyId = residency?.id;
-        const weekType = wk.week_type ?? 'calm';
-        const { data: templates } = await supabase
-          .from('roadmap_templates')
-          .select('id, title, content, week_type')
-          .eq('residency_id', residencyId);
-        const picked =
-          templates?.find((t: any) => t.week_type === weekType) ??
-          templates?.find((t: any) => t.week_type === 'calm') ??
-          null;
-        setTemplate(picked as RoadmapTemplate | null);
+        setBooking(bookingRow?.id ? { id: bookingRow.id } : null);
       } catch (e: any) {
         setError(e?.message ?? 'Erreur de chargement.');
       } finally {
@@ -124,11 +93,25 @@ export default function ArtistResidencyRoadmapPage() {
     return res?.clients?.[0]?.name ?? null;
   }, [week]);
 
+  const roadmapData = useMemo(() => {
+    if (!week) return null;
+    const residency = week.residencies?.[0];
+    if (!residency) return null;
+    return buildRoadmapData({
+      residencyName: residency.name ?? 'Programmation',
+      contextLabel: `${fmtDateFR(week.start_date_sun)} → ${fmtDateFR(week.end_date_sun)}`,
+      programType: residency.program_type ?? 'WEEKLY_RESIDENCY',
+      weekType: mapWeekType(week.week_type),
+      conditions: (residency.conditions_json ?? {}) as ConditionsJson,
+      overrides: (residency.roadmap_overrides_json ?? {}) as RoadmapOverrides,
+    });
+  }, [week]);
+
   if (loading) return <div className="text-slate-500">Chargement…</div>;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <header className="flex items-center justify-between">
+      <header className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Feuille de route</h1>
           {week ? (
@@ -139,9 +122,21 @@ export default function ArtistResidencyRoadmapPage() {
             </p>
           ) : null}
         </div>
-        <Link href="/artist/roadmaps" className="text-sm underline text-[var(--brand)]">
-          ← Retour
-        </Link>
+        <div className="flex items-center gap-2">
+          {booking?.id ? (
+            <a
+              href={`/api/artist/roadmap/${booking.id}/pdf`}
+              className="btn"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Exporter PDF
+            </a>
+          ) : null}
+          <Link href="/artist/roadmaps" className="text-sm underline text-[var(--brand)]">
+            ← Retour
+          </Link>
+        </div>
       </header>
 
       {error ? (
@@ -150,84 +145,7 @@ export default function ArtistResidencyRoadmapPage() {
         </div>
       ) : null}
 
-      {!template ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucune feuille de route disponible pour le moment.
-        </div>
-      ) : (
-        <section className="rounded-2xl border bg-white p-5 space-y-4">
-          <h2 className="text-lg font-semibold">{template.title}</h2>
-          {template.content?.intro ? (
-            <p className="text-sm text-slate-700">{template.content.intro}</p>
-          ) : null}
-
-          {template.content?.contacts?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Contacts</div>
-              {renderList(template.content.contacts)}
-            </div>
-          ) : null}
-
-          {template.content?.addresses?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Adresses</div>
-              {renderList(template.content.addresses)}
-            </div>
-          ) : null}
-
-          {template.content?.access?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Accès</div>
-              {renderList(template.content.access)}
-            </div>
-          ) : null}
-
-          {template.content?.lodging?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Logement</div>
-              {renderList(template.content.lodging)}
-            </div>
-          ) : null}
-
-          {template.content?.meals?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Repas</div>
-              {renderList(template.content.meals)}
-            </div>
-          ) : null}
-
-          {template.content?.schedule?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Planning</div>
-              <ul className="space-y-2 text-sm text-slate-700">
-                {template.content.schedule.map((s, idx) => (
-                  <li key={`${s.day}-${idx}`} className="rounded-lg border p-2">
-                    <div className="font-medium">
-                      {s.day} • {s.time}
-                    </div>
-                    <div>{s.place}</div>
-                    {s.notes ? <div className="text-xs text-slate-500">{s.notes}</div> : null}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {template.content?.logistics?.length ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Logistique</div>
-              {renderList(template.content.logistics)}
-            </div>
-          ) : null}
-
-          {template.content?.notes ? (
-            <div>
-              <div className="text-sm font-medium text-slate-600">Notes</div>
-              <p className="text-sm text-slate-700">{template.content.notes}</p>
-            </div>
-          ) : null}
-        </section>
-      )}
+      {roadmapData ? <RoadmapPreview data={roadmapData} /> : null}
     </div>
   );
 }

@@ -30,6 +30,7 @@ type Roadmap = {
 };
 
 type ResidencyRoadmap = {
+  booking_id: string;
   week_id: string;
   start_date_sun: string;
   end_date_sun: string;
@@ -38,8 +39,6 @@ type ResidencyRoadmap = {
   residency_id: string;
   residency_name: string;
   client_name?: string | null;
-  template_id?: string | null;
-  template_title?: string | null;
 };
 
 function fmtMinutes(m?: number | null) {
@@ -99,13 +98,14 @@ export default function ArtistRoadmapsPage() {
           const { data: weekBookings } = await supabase
             .from('week_bookings')
             .select(
-              'status, residency_week_id, residency_weeks(id, start_date_sun, end_date_sun, week_type, status, residency_id, residencies(id, name, clients(name)))'
+              'id, status, residency_week_id, residency_weeks(id, start_date_sun, end_date_sun, week_type, status, residency_id, residencies(id, name, clients(name)))'
             )
             .eq('artist_id', artistId)
             .eq('status', 'CONFIRMED')
             .order('created_at', { ascending: false });
           const weekRows = (weekBookings ?? [])
             .map((row: any) => ({
+              booking_id: row.id,
               week_id: row.residency_week_id,
               start_date_sun: row.residency_weeks?.start_date_sun,
               end_date_sun: row.residency_weeks?.end_date_sun,
@@ -119,30 +119,7 @@ export default function ArtistRoadmapsPage() {
             }))
             .filter((r: any) => r.week_id && r.residency_id && r.week_status !== 'CANCELLED');
 
-          const residencyIds = Array.from(new Set(weekRows.map((r: any) => r.residency_id)));
-          let templates: any[] = [];
-          if (residencyIds.length > 0) {
-            const { data: tpl } = await supabase
-              .from('roadmap_templates')
-              .select('id, residency_id, week_type, title')
-              .in('residency_id', residencyIds);
-            templates = tpl ?? [];
-          }
-
-          const withTemplates = weekRows.map((r: any) => {
-            const tpl =
-              templates.find(
-                (t) => t.residency_id === r.residency_id && t.week_type === r.week_type
-              ) ??
-              templates.find((t) => t.residency_id === r.residency_id && t.week_type === 'calm');
-            return {
-              ...r,
-              template_id: tpl?.id ?? null,
-              template_title: tpl?.title ?? null,
-            } as ResidencyRoadmap;
-          });
-
-          setResidencyRows(withTemplates);
+          setResidencyRows(weekRows);
         }
       } catch (e: any) {
         setError(e?.message ?? 'Erreur inconnue');
@@ -193,12 +170,22 @@ export default function ArtistRoadmapsPage() {
                       {r.week_type === 'strong' ? 'Semaine forte' : 'Semaine calme'}
                     </div>
                   </div>
-                  <Link
-                    href={`/artist/roadmaps/residencies/${r.week_id}`}
-                    className="btn btn-primary"
-                  >
-                    Voir la feuille de route
-                  </Link>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/artist/roadmaps/residencies/${r.week_id}`}
+                      className="btn btn-primary"
+                    >
+                      Voir la feuille de route
+                    </Link>
+                    <a
+                      href={`/api/artist/roadmap/${r.booking_id}/pdf`}
+                      className="btn"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      PDF
+                    </a>
+                  </div>
                 </div>
               </li>
             ))}

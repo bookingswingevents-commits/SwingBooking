@@ -96,6 +96,16 @@ export async function POST(req: Request) {
       }
     }
 
+    const baseConditions = {
+      lodging: {
+        included: body?.lodging_included ?? true,
+        companion_included: body?.companion_included ?? true,
+      },
+      meals: {
+        included: body?.meals_included ?? true,
+      },
+    };
+
     const { data: residency, error: insErr } = await supaSrv
       .from('residencies')
       .insert({
@@ -108,6 +118,8 @@ export async function POST(req: Request) {
         companion_included: body?.companion_included ?? true,
         created_by: user.id,
         mode,
+        program_type: mode === 'DATES' ? 'MULTI_DATES' : 'WEEKLY_RESIDENCY',
+        conditions_json: baseConditions,
       })
       .select('id')
       .maybeSingle();
@@ -138,6 +150,23 @@ export async function POST(req: Request) {
       if (weeksErr) {
         return NextResponse.json({ ok: false, error: weeksErr.message }, { status: 500 });
       }
+
+      const calm = weekRows.find((row) => row?.type === 'CALM');
+      const peak = weekRows.find((row) => row?.type === 'BUSY');
+      const remuneration = {
+        mode: 'PER_WEEK',
+        currency: 'EUR',
+        is_net: true,
+        per_week: {
+          calm: calm ? { fee_cents: calm.fee_cents, performances_count: calm.performances_count } : null,
+          peak: peak ? { fee_cents: peak.fee_cents, performances_count: peak.performances_count } : null,
+        },
+      };
+
+      await supaSrv
+        .from('residencies')
+        .update({ conditions_json: { ...baseConditions, remuneration } })
+        .eq('id', residency.id);
 
       return NextResponse.json({ ok: true, id: residency.id, mode, weeks: weekRows.length });
     }

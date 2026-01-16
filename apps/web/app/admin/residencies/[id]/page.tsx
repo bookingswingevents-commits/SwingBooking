@@ -10,6 +10,11 @@ import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { labelForStatus, labelForError } from '@/lib/i18n';
 import { DayPicker } from 'react-day-picker';
+import RoadmapPreview from '@/components/RoadmapPreview';
+import type { ConditionsJson, RoadmapEntry, RoadmapOverrides, RoadmapScheduleEntry } from '@/lib/roadmap';
+import { buildRoadmapData } from '@/lib/roadmap';
+
+type ProgramType = 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 
 type ResidencyRow = {
   id: string;
@@ -26,6 +31,9 @@ type ResidencyRow = {
   lodging_included: boolean;
   meals_included: boolean;
   companion_included: boolean;
+  program_type?: ProgramType | null;
+  conditions_json?: ConditionsJson | null;
+  roadmap_overrides_json?: RoadmapOverrides | null;
   event_address_line1?: string | null;
   event_address_line2?: string | null;
   event_address_zip?: string | null;
@@ -88,29 +96,6 @@ type ResidencyOccurrence = {
   notes: string | null;
 };
 
-type RoadmapEntry = { label: string; value: string };
-type RoadmapScheduleEntry = { day: string; time: string; place: string; notes?: string };
-
-type RoadmapContent = {
-  intro?: string;
-  contacts?: RoadmapEntry[];
-  addresses?: RoadmapEntry[];
-  access?: RoadmapEntry[];
-  lodging?: RoadmapEntry[];
-  meals?: RoadmapEntry[];
-  schedule?: RoadmapScheduleEntry[];
-  logistics?: RoadmapEntry[];
-  notes?: string;
-};
-
-type RoadmapTemplate = {
-  id?: string;
-  residency_id: string;
-  week_type: 'calm' | 'strong';
-  title: string;
-  content: RoadmapContent;
-};
-
 type ResidencyApplication = {
   id: string;
   date: string;
@@ -168,6 +153,15 @@ type DateStatusSummary = {
   invitedArtists: { name: string; status: string }[];
 };
 
+type RemunerationOption = { label: string; amount_cents?: number };
+
+type ConditionsErrors = { remuneration?: string };
+
+type RoadmapSelection =
+  | { kind: 'week'; week: ResidencyWeek }
+  | { kind: 'date'; date: string }
+  | null;
+
 const formatMoney = (cents: number) =>
   new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(cents / 100);
 
@@ -189,13 +183,6 @@ function buildAddress(
   return parts.join(', ');
 }
 
-function normalizeTermsMode(
-  mode?: ResidencyRow['terms_mode']
-): 'SIMPLE_FEE' | 'RESIDENCY_WEEKLY' {
-  if (mode === 'SIMPLE_FEE') return 'SIMPLE_FEE';
-  return 'RESIDENCY_WEEKLY';
-}
-
 function toISODate(date: Date) {
   const normalized = new Date(date);
   normalized.setHours(12, 0, 0, 0);
@@ -205,133 +192,112 @@ function toISODate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-function fromISODate(value: string) {
-  if (!value) return null;
-  const d = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d;
+function parseCents(value: string) {
+  const normalized = value.replace(',', '.').trim();
+  if (!normalized) return undefined;
+  const num = Number(normalized);
+  if (!Number.isFinite(num)) return undefined;
+  return Math.round(num * 100);
 }
 
-function enumerateDates(startDate: string, endDate: string) {
-  const dates: string[] = [];
-  const start = new Date(`${startDate}T12:00:00`);
-  const end = new Date(`${endDate}T12:00:00`);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return dates;
-  let cursor = start;
-  while (cursor <= end) {
-    dates.push(toISODate(cursor));
-    const next = new Date(cursor);
-    next.setDate(next.getDate() + 1);
-    cursor = next;
-  }
-  return dates;
+function formatCentsInput(value?: number | null) {
+  if (typeof value !== 'number') return '';
+  return String((value / 100).toFixed(2)).replace(/\.00$/, '');
 }
 
-function emptyRoadmapContent(): RoadmapContent {
-  return {
-    intro: '',
-    contacts: [],
-    addresses: [],
-    access: [],
-    lodging: [],
-    meals: [],
-    schedule: [],
-    logistics: [],
-    notes: '',
-  };
+function mapWeekType(value?: string | null) {
+  if (value === 'strong') return 'PEAK' as const;
+  if (value === 'calm') return 'CALM' as const;
+  return null;
 }
 
-function cloneRoadmapContent(content: RoadmapContent): RoadmapContent {
-  return {
-    intro: content.intro ?? '',
-    contacts: [...(content.contacts ?? [])],
-    addresses: [...(content.addresses ?? [])],
-    access: [...(content.access ?? [])],
-    lodging: [...(content.lodging ?? [])],
-    meals: [...(content.meals ?? [])],
-    schedule: [...(content.schedule ?? [])],
-    logistics: [...(content.logistics ?? [])],
-    notes: content.notes ?? '',
-  };
-}
+function buildLegacyConditions(
+  residency: ResidencyRow,
+  weeks: ResidencyWeek[],
+  resolvedAddress?: string | null
+): ConditionsJson {
+  const calm = weeks.find((w) => w.type === 'CALM' || w.week_type === 'calm');
+  const peak = weeks.find((w) => w.type === 'BUSY' || w.week_type === 'strong');
 
-function defaultRoadmapTemplate(residencyId: string, weekType: 'calm' | 'strong'): RoadmapTemplate {
-  return {
-    residency_id: residencyId,
-    week_type: weekType,
-    title: weekType === 'strong' ? 'Semaine forte' : 'Semaine calme',
-    content: emptyRoadmapContent(),
-  };
-}
-
-function l2aContent(): RoadmapContent {
-  return {
-    intro: 'Bienvenue à la résidence. Merci de vérifier les informations ci-dessous.',
-    contacts: [
-      { label: 'Julien', value: '06 08 90 65 79' },
-      { label: 'Nicolas', value: '06 84 54 29 57' },
-    ],
-    addresses: [
-      { label: 'Appartement', value: '4 Av. de la Muzelle, 38860 Les Deux Alpes' },
-    ],
-    access: [
-      { label: 'Clés', value: 'Réception Orée des Pistes' },
-      { label: 'Code', value: '1789' },
-      { label: 'Appartement', value: 'B326 (3e étage)' },
-    ],
-    lodging: [
-      { label: 'Linge', value: 'Draps propres à récupérer à Orée des Pistes' },
-      { label: 'Linge', value: 'Draps sales à ramener à Orée des Pistes' },
-    ],
-    meals: [
-      { label: 'Repas', value: 'Tous les soirs pour l’artiste + accompagnant' },
-    ],
-    schedule: [
-      {
-        day: 'Mercredi',
-        time: '18:30-19:30',
-        place: 'Orée des Pistes',
-        notes: 'Arrivée 17h • Repas • 20:30-21:30',
-      },
-      {
-        day: 'Samedi',
-        time: '21:00-23:00',
-        place: 'Les Crêtes',
-        notes: 'Arrivée 20h',
-      },
-    ],
-    logistics: [],
-    notes: '',
-  };
-}
-
-function isL2A(name?: string | null) {
-  const n = (name ?? '').toLowerCase();
-  return n.includes('l2a') || n.includes('les 2 alpes') || n.includes('les deux alpes');
-}
-
-function makeStrongFromCalm(calm: RoadmapTemplate, residencyId: string): RoadmapTemplate {
-  const content = cloneRoadmapContent(calm.content ?? emptyRoadmapContent());
-  const schedule = [...(content.schedule ?? [])];
-  schedule.push(
-    {
-      day: 'Mardi',
-      time: '16:00-17:30',
-      place: 'Hôtel Belambra Orée des pistes',
-      notes: 'After-ski',
+  const conditions: ConditionsJson = {
+    remuneration: residency.mode === 'DATES'
+      ? {
+          mode: 'PER_DATE',
+          currency: residency.fee_currency ?? 'EUR',
+          is_net: residency.fee_is_net ?? true,
+          per_date: residency.fee_amount_cents
+            ? { amount_cents: residency.fee_amount_cents, artist_choice: false, options: [] }
+            : { artist_choice: false, options: [] },
+        }
+      : {
+          mode: 'PER_WEEK',
+          currency: residency.fee_currency ?? 'EUR',
+          is_net: residency.fee_is_net ?? true,
+          per_week: {
+            calm: calm
+              ? { fee_cents: calm.fee_cents, performances_count: calm.performances_count }
+              : { fee_cents: 15000, performances_count: 2 },
+            peak: peak
+              ? { fee_cents: peak.fee_cents, performances_count: peak.performances_count }
+              : { fee_cents: 30000, performances_count: 4 },
+          },
+        },
+    lodging: {
+      included: residency.lodging_included,
+      companion_included: residency.companion_included,
+      details: '',
     },
-    {
-      day: 'Vendredi',
-      time: '16:00-17:30',
-      place: 'Hôtel Belambra Orée des pistes',
-      notes: 'After-ski',
-    }
-  );
+    meals: {
+      included: residency.meals_included,
+      details: '',
+    },
+    defraiement: { details: '' },
+    locations: resolvedAddress
+      ? { items: [{ label: 'Adresse', value: resolvedAddress }] }
+      : { items: [] },
+    contacts: { items: [] },
+    access: { items: [] },
+    logistics: { items: [] },
+    planning: { items: [] },
+    notes: '',
+  };
+  return conditions;
+}
+
+function mergeConditions(base: ConditionsJson, override: ConditionsJson): ConditionsJson {
   return {
-    residency_id: residencyId,
-    week_type: 'strong',
-    title: 'Semaine forte',
-    content: { ...content, schedule },
+    ...base,
+    ...override,
+    remuneration: {
+      ...base.remuneration,
+      ...override.remuneration,
+      per_date: {
+        ...base.remuneration?.per_date,
+        ...override.remuneration?.per_date,
+        options: override.remuneration?.per_date?.options ?? base.remuneration?.per_date?.options ?? [],
+      },
+      per_week: {
+        ...base.remuneration?.per_week,
+        ...override.remuneration?.per_week,
+        calm: {
+          ...base.remuneration?.per_week?.calm,
+          ...override.remuneration?.per_week?.calm,
+        },
+        peak: {
+          ...base.remuneration?.per_week?.peak,
+          ...override.remuneration?.per_week?.peak,
+        },
+      },
+    },
+    lodging: { ...base.lodging, ...override.lodging },
+    meals: { ...base.meals, ...override.meals },
+    defraiement: { ...base.defraiement, ...override.defraiement },
+    locations: { ...base.locations, ...override.locations },
+    contacts: { ...base.contacts, ...override.contacts },
+    access: { ...base.access, ...override.access },
+    logistics: { ...base.logistics, ...override.logistics },
+    planning: { ...base.planning, ...override.planning },
+    notes: override.notes ?? base.notes,
   };
 }
 
@@ -356,15 +322,12 @@ export default function AdminResidencyDetailPage({
   const [actionLoading, setActionLoading] = useState(false);
   const [origin, setOrigin] = useState<string>('');
   const [editName, setEditName] = useState('');
-  const [editLodging, setEditLodging] = useState(true);
-  const [editMeals, setEditMeals] = useState(true);
-  const [editCompanion, setEditCompanion] = useState(true);
-  const [editTermsMode, setEditTermsMode] = useState<'SIMPLE_FEE' | 'RESIDENCY_WEEKLY'>('RESIDENCY_WEEKLY');
-  const [editFeeAmount, setEditFeeAmount] = useState('');
-  const [editFeeIsNet, setEditFeeIsNet] = useState(true);
   const [editIsPublic, setEditIsPublic] = useState(false);
   const [editIsOpen, setEditIsOpen] = useState(true);
-  const [isEditingConditions, setIsEditingConditions] = useState(false);
+  const [editProgramType, setEditProgramType] = useState<ProgramType>('WEEKLY_RESIDENCY');
+  const [conditionsDraft, setConditionsDraft] = useState<ConditionsJson>({});
+  const [roadmapOverrides, setRoadmapOverrides] = useState<RoadmapOverrides>({});
+  const [conditionsErrors, setConditionsErrors] = useState<ConditionsErrors>({});
   const [dateStatusMap, setDateStatusMap] = useState<Record<string, DateStatusSummary>>({});
   const [addressLine1, setAddressLine1] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
@@ -378,17 +341,9 @@ export default function AdminResidencyDetailPage({
   const [addDatesError, setAddDatesError] = useState<string | null>(null);
   const [addDatesSuccess, setAddDatesSuccess] = useState<string | null>(null);
   const [addDatesLoading, setAddDatesLoading] = useState(false);
-  const [roadmapDrafts, setRoadmapDrafts] = useState<{
-    calm: RoadmapTemplate | null;
-    strong: RoadmapTemplate | null;
-  }>({ calm: null, strong: null });
-  const [roadmapLoading, setRoadmapLoading] = useState(false);
-  const [roadmapError, setRoadmapError] = useState<string | null>(null);
-  const [roadmapSuccess, setRoadmapSuccess] = useState<string | null>(null);
-  const [roadmapCopyFrom, setRoadmapCopyFrom] = useState<string>('');
-  const [roadmapResidencies, setRoadmapResidencies] = useState<Array<{ id: string; name: string }>>(
-    []
-  );
+  const [roadmapSelection, setRoadmapSelection] = useState<RoadmapSelection>(null);
+  const [activeTab, setActiveTab] = useState<'agenda' | 'conditions' | 'roadmap' | 'settings'>('agenda');
+
   const existingDates = useMemo(
     () => occurrences.map((occ) => occ.date).filter(Boolean).sort(),
     [occurrences]
@@ -423,7 +378,7 @@ export default function AdminResidencyDetailPage({
       const resRes = await supabase
         .from('residencies')
         .select(
-          'id, name, start_date, end_date, mode, terms_mode, fee_amount_cents, fee_currency, fee_is_net, is_public, is_open, lodging_included, meals_included, companion_included, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
+          'id, name, start_date, end_date, mode, terms_mode, fee_amount_cents, fee_currency, fee_is_net, is_public, is_open, lodging_included, meals_included, companion_included, program_type, conditions_json, roadmap_overrides_json, event_address_line1, event_address_line2, event_address_zip, event_address_city, event_address_country, clients(name, default_event_address_line1, default_event_address_line2, default_event_zip, default_event_city, default_event_country)'
         )
         .eq('id', residencyId)
         .maybeSingle();
@@ -445,6 +400,9 @@ export default function AdminResidencyDetailPage({
       if (appsRes.error) throw appsRes.error;
 
       let datesInRes: string[] | null = null;
+      let weekRows: ResidencyWeek[] = [];
+      let occRows: ResidencyOccurrence[] = [];
+
       if (resRow?.mode === 'DATES') {
         const occRes = await supabase
           .from('residency_occurrences')
@@ -452,7 +410,7 @@ export default function AdminResidencyDetailPage({
           .eq('residency_id', residencyId)
           .order('date', { ascending: true });
         if (occRes.error) throw occRes.error;
-        const occRows = (occRes.data as ResidencyOccurrence[]) ?? [];
+        occRows = (occRes.data as ResidencyOccurrence[]) ?? [];
         setOccurrences(occRows);
         datesInRes = occRows.map((o) => o.date);
         setWeeks([]);
@@ -465,94 +423,69 @@ export default function AdminResidencyDetailPage({
           .eq('residency_id', residencyId)
           .order('start_date_sun', { ascending: true });
         if (weeksRes.error) throw weeksRes.error;
-        const weekRows = ((weeksRes.data as ResidencyWeek[]) ?? []).filter(
-          (w) => w.status !== 'CANCELLED'
-        );
+        weekRows = ((weeksRes.data as ResidencyWeek[]) ?? []).filter((w) => w.status !== 'CANCELLED');
         setWeeks(weekRows);
         setOccurrences([]);
-        const weekDates = weekRows.flatMap((w) =>
-          enumerateDates(w.start_date_sun, w.end_date_sun)
-        );
+        const weekDates = weekRows.flatMap((w) => {
+          const dates: string[] = [];
+          const start = new Date(`${w.start_date_sun}T12:00:00`);
+          const end = new Date(`${w.end_date_sun}T12:00:00`);
+          let cursor = start;
+          while (cursor <= end) {
+            dates.push(toISODate(cursor));
+            const next = new Date(cursor);
+            next.setDate(next.getDate() + 1);
+            cursor = next;
+          }
+          return dates;
+        });
         datesInRes = weekDates;
-      }
-
-      setRoadmapLoading(true);
-      setRoadmapError(null);
-      setRoadmapSuccess(null);
-      try {
-        const res = await fetch(`/api/admin/roadmap-templates?residency_id=${encodeURIComponent(residencyId)}`, {
-          credentials: 'include',
-        });
-        const json = await res.json();
-        if (!res.ok || !json?.ok) {
-          throw new Error(json?.error || 'Erreur chargement feuilles de route.');
-        }
-        const templates = (json.templates ?? []) as RoadmapTemplate[];
-        const normalize = (t: RoadmapTemplate): RoadmapTemplate => ({
-          ...t,
-          title: t.title || (t.week_type === 'strong' ? 'Semaine forte' : 'Semaine calme'),
-          content: {
-            ...emptyRoadmapContent(),
-            ...(t.content ?? {}),
-            contacts: t.content?.contacts ?? [],
-            addresses: t.content?.addresses ?? [],
-            access: t.content?.access ?? [],
-            lodging: t.content?.lodging ?? [],
-            meals: t.content?.meals ?? [],
-            schedule: t.content?.schedule ?? [],
-            logistics: t.content?.logistics ?? [],
-          },
-        });
-        const calm = templates.find((t) => t.week_type === 'calm');
-        const strong = templates.find((t) => t.week_type === 'strong');
-        setRoadmapDrafts({
-          calm: calm ? normalize(calm) : null,
-          strong: strong ? normalize(strong) : null,
-        });
-      } catch (e: any) {
-        setRoadmapError(e?.message ?? 'Erreur chargement feuilles de route.');
-      } finally {
-        setRoadmapLoading(false);
-      }
-
-      const { data: allResidencies } = await supabase
-        .from('residencies')
-        .select('id, name')
-        .order('created_at', { ascending: false });
-      if (allResidencies) {
-        setRoadmapResidencies(
-          allResidencies
-            .filter((r) => r.id !== residencyId)
-            .map((r) => ({ id: r.id, name: r.name }))
-        );
       }
 
       setResidency(resRow);
       setEditName(resRow.name);
-      setEditLodging(!!resRow.lodging_included);
-      setEditMeals(!!resRow.meals_included);
-      setEditCompanion(!!resRow.companion_included);
-      setEditTermsMode(normalizeTermsMode(resRow.terms_mode));
-      setEditFeeAmount(
-        typeof resRow.fee_amount_cents === 'number'
-          ? String((resRow.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
-          : ''
-      );
-      setEditFeeIsNet(resRow.fee_is_net ?? true);
       setEditIsPublic(!!resRow.is_public);
       setEditIsOpen(!!resRow.is_open);
+      setEditProgramType(
+        (resRow.program_type as ProgramType | null) ??
+          (resRow.mode === 'DATES' ? 'MULTI_DATES' : 'WEEKLY_RESIDENCY')
+      );
+      setInvitations((invRes.data as InvitationRow[]) ?? []);
+      setResidencyApplications((appsRes.data as ResidencyApplication[]) ?? []);
+
+      const clientRow = Array.isArray(resRow.clients) ? resRow.clients[0] : (resRow.clients as any);
+      const resolvedLine2 = resRow.event_address_line2 ?? clientRow?.default_event_address_line2 ?? null;
+      const resolvedAddress = buildAddress(
+        resRow.event_address_line1 ?? clientRow?.default_event_address_line1 ?? null,
+        resolvedLine2,
+        resRow.event_address_zip ?? clientRow?.default_event_zip ?? null,
+        resRow.event_address_city ?? clientRow?.default_event_city ?? null,
+        resRow.event_address_country ?? clientRow?.default_event_country ?? null
+      );
+
+      const legacyConditions = buildLegacyConditions(resRow, weekRows, resolvedAddress);
+      const existingConditions = (resRow.conditions_json ?? {}) as ConditionsJson;
+      setConditionsDraft(mergeConditions(legacyConditions, existingConditions));
+      setRoadmapOverrides((resRow.roadmap_overrides_json ?? {}) as RoadmapOverrides);
+
       setAddressLine1(resRow.event_address_line1 ?? '');
       setAddressLine2(resRow.event_address_line2 ?? '');
       setAddressZip(resRow.event_address_zip ?? '');
       setAddressCity(resRow.event_address_city ?? '');
       setAddressCountry(resRow.event_address_country ?? '');
-      setInvitations((invRes.data as InvitationRow[]) ?? []);
-      setResidencyApplications((appsRes.data as ResidencyApplication[]) ?? []);
 
       if (datesInRes && datesInRes.length > 0) {
         await loadDateStatuses(datesInRes);
       } else {
         setDateStatusMap({});
+      }
+
+      if (resRow.mode === 'DATES') {
+        const firstDate = occRows[0]?.date ?? null;
+        setRoadmapSelection(firstDate ? { kind: 'date', date: firstDate } : null);
+      } else {
+        const firstWeek = weekRows[0] ?? null;
+        setRoadmapSelection(firstWeek ? { kind: 'week', week: firstWeek } : null);
       }
     } catch (e: any) {
       setError(e?.message ?? 'Erreur de chargement');
@@ -673,11 +606,6 @@ export default function AdminResidencyDetailPage({
         });
       });
 
-      const requestById: Record<string, BookingRequestMini> = {};
-      reqRows.forEach((row) => {
-        requestById[row.id] = row;
-      });
-
       const confirmedStatuses = new Set([
         'confirmed',
         'accepted',
@@ -718,17 +646,20 @@ export default function AdminResidencyDetailPage({
             'Artiste'
           );
 
-        const anyConfirmedRequest = reqIds.some((id) => {
-          const st = String(requestById[id]?.status ?? '').toLowerCase();
-          return confirmedStatuses.has(st);
-        });
+        const anyConfirmed = reqIds.some((id) =>
+          confirmedStatuses.has(String(reqRows.find((r) => r.id === id)?.status ?? '').toLowerCase())
+        );
+        const anyPending = invites.some((inv) =>
+          ['invited', 'pending'].includes(String(inv.status ?? '').toLowerCase())
+        );
+        const anyDeclined = declinedCount > 0;
 
         let status: DateStatusSummary['status'] = 'EMPTY';
-        if (anyConfirmedRequest) {
+        if (anyConfirmed) {
           status = 'CONFIRMED';
         } else if (invitedCount === 0) {
           status = 'EMPTY';
-        } else if (declinedCount === invitedCount) {
+        } else if (!anyPending && anyDeclined) {
           status = 'DECLINED';
         } else {
           status = 'PENDING';
@@ -736,7 +667,7 @@ export default function AdminResidencyDetailPage({
 
         map[date] = {
           status,
-          confirmedArtists,
+          confirmedArtists: Array.from(new Set(confirmedArtists)),
           invitedCount,
           declinedCount,
           invitedArtists,
@@ -744,67 +675,8 @@ export default function AdminResidencyDetailPage({
       });
 
       setDateStatusMap(map);
-    } catch {
-      setDateStatusMap({});
-    }
-  }
-
-  useEffect(() => {
-    if (!residencyId) return;
-    setResidency(null);
-    setWeeks([]);
-    setOccurrences([]);
-    setInvitations([]);
-    setDateStatusMap({});
-    setError(null);
-    setLoading(true);
-    loadData();
-    loadArtists();
-  }, [residencyId]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setOrigin(window.location.origin);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!addDatesOpen) return;
-    const preselected = existingDates
-      .map((date) => fromISODate(date))
-      .filter((d): d is Date => d instanceof Date);
-    setSelectedDates(preselected);
-  }, [addDatesOpen, existingDates]);
-
-  const filteredArtists = useMemo(() => {
-    if (!searchArtist.trim()) return artists;
-    const q = searchArtist.toLowerCase();
-    return artists.filter((a) =>
-      `${a.stage_name ?? ''} ${a.full_name ?? ''} ${a.email ?? ''}`.toLowerCase().includes(q)
-    );
-  }, [artists, searchArtist]);
-
-  async function sendInvitations() {
-    const artist_ids = Object.entries(selectedArtists)
-      .filter(([, v]) => v)
-      .map(([id]) => id);
-    if (artist_ids.length === 0) return;
-    try {
-      setActionLoading(true);
-      const res = await fetch('/api/admin/residencies/invitations', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ residency_id: residencyId, artist_ids }),
-      });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Envoi impossible');
-      setSelectedArtists({});
-      await loadData();
     } catch (e: any) {
-      setError(e?.message ?? 'Erreur lors de l\'envoi');
-    } finally {
-      setActionLoading(false);
+      setDateStatusMap({});
     }
   }
 
@@ -812,7 +684,9 @@ export default function AdminResidencyDetailPage({
     try {
       setActionLoading(true);
       const payload =
-        type === 'BUSY'
+        type === week.type
+          ? { type, performances_count: week.performances_count, fee_cents: week.fee_cents }
+          : type === 'BUSY'
           ? { type, performances_count: 4, fee_cents: 30000, week_type: 'strong' }
           : { type, performances_count: 2, fee_cents: 15000, week_type: 'calm' };
       const { error: upErr } = await supabase
@@ -847,7 +721,7 @@ export default function AdminResidencyDetailPage({
     }
   }
 
-  async function saveResidency() {
+  async function saveSettings() {
     if (!residency) return;
     if (!editName.trim()) {
       setError('Nom requis.');
@@ -855,18 +729,21 @@ export default function AdminResidencyDetailPage({
     }
     try {
       setActionLoading(true);
-      const { error: upErr } = await supabase
-        .from('residencies')
-        .update({
+      setError(null);
+      const res = await fetch(`/api/admin/residencies/${residency.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           name: editName.trim(),
-          lodging_included: editLodging,
-          meals_included: editMeals,
-          companion_included: editCompanion,
           is_public: editIsPublic,
           is_open: editIsOpen,
-        })
-        .eq('id', residency.id);
-      if (upErr) throw upErr;
+          program_type: editProgramType,
+        }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
+      setSuccess('Parametres enregistres.');
       await loadData();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la mise a jour');
@@ -880,34 +757,67 @@ export default function AdminResidencyDetailPage({
     try {
       setActionLoading(true);
       setError(null);
-      const payload: Record<string, any> = {
-        terms_mode: editTermsMode,
-      };
-      if (editTermsMode === 'SIMPLE_FEE') {
-        const num = Number(editFeeAmount.replace(',', '.'));
-        if (!Number.isFinite(num) || num <= 0) {
-          setError('Montant du cachet invalide.');
+      setConditionsErrors({});
+
+      const draft = conditionsDraft;
+      const remuneration = draft.remuneration ?? {};
+      const perDate = remuneration.per_date ?? { artist_choice: false, options: [] };
+      const perWeek = remuneration.per_week ?? {};
+
+      if (editProgramType === 'MULTI_DATES') {
+        if (perDate.artist_choice) {
+          const options = (perDate.options ?? []).filter((opt) => opt.label?.trim());
+          if (options.length === 0) {
+            setConditionsErrors({ remuneration: 'Ajoutez au moins une option de cachet.' });
+            setActionLoading(false);
+            return;
+          }
+        } else if (!perDate.amount_cents || perDate.amount_cents <= 0) {
+          setConditionsErrors({ remuneration: 'Montant par date requis.' });
           setActionLoading(false);
           return;
         }
-        payload.fee_amount_cents = Math.round(num * 100);
-        payload.fee_currency = 'EUR';
-        payload.fee_is_net = editFeeIsNet;
-      } else if (editTermsMode === 'RESIDENCY_WEEKLY') {
-        payload.lodging_included = editLodging;
-        payload.meals_included = editMeals;
-        payload.companion_included = editCompanion;
+      } else {
+        const calm = perWeek.calm;
+        const peak = perWeek.peak;
+        if (!calm?.fee_cents && !peak?.fee_cents) {
+          setConditionsErrors({ remuneration: 'Renseignez au moins une semaine.' });
+          setActionLoading(false);
+          return;
+        }
       }
+
+      const legacyUpdate: Record<string, any> = {
+        terms_mode: editProgramType === 'MULTI_DATES' ? 'SIMPLE_FEE' : 'RESIDENCY_WEEKLY',
+      };
+      if (typeof draft.lodging?.included === 'boolean') {
+        legacyUpdate.lodging_included = draft.lodging.included;
+      }
+      if (typeof draft.meals?.included === 'boolean') {
+        legacyUpdate.meals_included = draft.meals.included;
+      }
+      if (typeof draft.lodging?.companion_included === 'boolean') {
+        legacyUpdate.companion_included = draft.lodging.companion_included;
+      }
+      if (editProgramType === 'MULTI_DATES' && draft.remuneration?.per_date?.amount_cents) {
+        legacyUpdate.fee_amount_cents = draft.remuneration.per_date.amount_cents;
+        legacyUpdate.fee_currency = draft.remuneration.currency ?? 'EUR';
+        legacyUpdate.fee_is_net = draft.remuneration.is_net ?? true;
+      }
+
       const res = await fetch(`/api/admin/residencies/${residency.id}`, {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          program_type: editProgramType,
+          conditions_json: draft,
+          ...legacyUpdate,
+        }),
       });
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
       setSuccess('Conditions mises a jour.');
-      setIsEditingConditions(false);
       await loadData();
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la mise a jour');
@@ -916,124 +826,81 @@ export default function AdminResidencyDetailPage({
     }
   }
 
-  function ensureRoadmapDraft(weekType: 'calm' | 'strong') {
+  async function saveRoadmapOverrides() {
     if (!residency) return;
-    setRoadmapSuccess(null);
-    setRoadmapError(null);
-    setRoadmapDrafts((prev) => {
-      if (prev[weekType]) return prev;
-      if (weekType === 'strong' && prev.calm) {
-        return { ...prev, strong: makeStrongFromCalm(prev.calm, residency.id) };
-      }
-      const base =
-        weekType === 'calm' && isL2A(residency.name)
-          ? {
-              ...defaultRoadmapTemplate(residency.id, weekType),
-              content: l2aContent(),
-            }
-          : defaultRoadmapTemplate(residency.id, weekType);
-      return { ...prev, [weekType]: base };
-    });
+    try {
+      setActionLoading(true);
+      setError(null);
+      const res = await fetch(`/api/admin/residencies/${residency.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roadmap_overrides_json: roadmapOverrides }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Mise a jour impossible');
+      setSuccess('Feuille de route mise a jour.');
+      await loadData();
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur lors de la mise a jour');
+    } finally {
+      setActionLoading(false);
+    }
   }
 
-  async function saveRoadmapTemplate(weekType: 'calm' | 'strong') {
+  async function addDates() {
     if (!residency) return;
-    const tmpl = roadmapDrafts[weekType];
-    if (!tmpl) {
-      setRoadmapError('Aucune feuille à enregistrer.');
-      return;
-    }
     try {
-      setRoadmapLoading(true);
-      setRoadmapError(null);
-      const res = await fetch('/api/admin/roadmap-templates', {
+      setAddDatesLoading(true);
+      setAddDatesError(null);
+      setAddDatesSuccess(null);
+
+      const toAdd = selectedDates
+        .map((d) => toISODate(d))
+        .filter((d) => !existingDates.includes(d));
+      if (toAdd.length === 0) {
+        setAddDatesError('Aucune nouvelle date a ajouter.');
+        setAddDatesLoading(false);
+        return;
+      }
+
+      const res = await fetch('/api/admin/residency-occurrences', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          residency_id: residency.id,
-          week_type: weekType,
-          title: tmpl.title,
-          content: tmpl.content,
-        }),
+        body: JSON.stringify({ residency_id: residency.id, dates: toAdd }),
       });
       const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || 'Enregistrement impossible.');
-      }
-      setRoadmapDrafts((prev) => ({
-        ...prev,
-        [weekType]: {
-          ...(json.template as RoadmapTemplate),
-          content: {
-            ...emptyRoadmapContent(),
-            ...(json.template?.content ?? {}),
-          },
-        },
-      }));
-      setRoadmapSuccess('Feuille de route enregistrée.');
+      if (!json.ok) throw new Error(json.error || 'Ajout impossible');
+      setSelectedDates([]);
+      setAddDatesSuccess('Dates ajoutees.');
+      await loadData();
     } catch (e: any) {
-      setRoadmapError(e?.message ?? 'Erreur lors de l’enregistrement.');
+      setAddDatesError(e?.message ?? 'Erreur lors de l\'ajout');
     } finally {
-      setRoadmapLoading(false);
+      setAddDatesLoading(false);
     }
   }
 
-  async function duplicateRoadmapsFromResidency() {
-    if (!residency || !roadmapCopyFrom) return;
+  async function deleteOccurrence(occurrenceId: string) {
+    if (!residency) return;
+    if (!window.confirm('Supprimer cette date ?')) return;
     try {
-      setRoadmapLoading(true);
-      setRoadmapError(null);
-      const res = await fetch(
-        `/api/admin/roadmap-templates?residency_id=${encodeURIComponent(roadmapCopyFrom)}`,
-        { credentials: 'include' }
-      );
-      const json = await res.json();
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || 'Duplication impossible.');
-      }
-      const templates = (json.templates ?? []) as RoadmapTemplate[];
-      const calm = templates.find((t) => t.week_type === 'calm');
-      const strong = templates.find((t) => t.week_type === 'strong');
-      setRoadmapDrafts({
-        calm: calm
-          ? { ...calm, residency_id: residency.id }
-          : defaultRoadmapTemplate(residency.id, 'calm'),
-        strong: strong
-          ? { ...strong, residency_id: residency.id }
-          : null,
+      setActionLoading(true);
+      const res = await fetch('/api/admin/residency-occurrences', {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: occurrenceId }),
       });
-      setRoadmapSuccess('Feuilles de route dupliquées.');
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Suppression impossible');
+      await loadData();
     } catch (e: any) {
-      setRoadmapError(e?.message ?? 'Duplication impossible.');
+      setError(e?.message ?? 'Erreur lors de la suppression');
     } finally {
-      setRoadmapLoading(false);
+      setActionLoading(false);
     }
-  }
-
-  function updateRoadmapContent(
-    weekType: 'calm' | 'strong',
-    updater: (content: RoadmapContent) => RoadmapContent
-  ) {
-    setRoadmapDrafts((prev) => {
-      const tmpl = prev[weekType];
-      if (!tmpl) return prev;
-      return {
-        ...prev,
-        [weekType]: {
-          ...tmpl,
-          content: updater(tmpl.content ?? emptyRoadmapContent()),
-        },
-      };
-    });
-  }
-
-  function updateRoadmapTitle(weekType: 'calm' | 'strong', title: string) {
-    setRoadmapDrafts((prev) => {
-      const tmpl = prev[weekType];
-      if (!tmpl) return prev;
-      return { ...prev, [weekType]: { ...tmpl, title } };
-    });
   }
 
   async function saveAddress() {
@@ -1054,86 +921,10 @@ export default function AdminResidencyDetailPage({
       setShowAddressModal(false);
       await loadData();
     } catch (e: any) {
-      setError(e?.message ?? 'Erreur lors de la mise a jour');
+      setError(e?.message ?? 'Erreur lors de l\'enregistrement');
     } finally {
       setActionLoading(false);
     }
-  }
-
-  function copyAddress(text: string) {
-    navigator.clipboard.writeText(text).then(
-      () => {
-        setCopyMessage('Adresse copiée');
-        setTimeout(() => setCopyMessage(''), 1500);
-      },
-      () => setCopyMessage('Impossible de copier')
-    );
-  }
-
-  async function addDates() {
-    const residencyIdValue = residency?.id || residencyId;
-    if (!residencyIdValue) {
-      setAddDatesError('Programmation manquante.');
-      return;
-    }
-    if (selectedDates.length === 0) {
-      setAddDatesError('Sélectionnez au moins une date.');
-      return;
-    }
-    const selectedIso = selectedDates.map((date) => toISODate(date));
-    const uniqueSelected = Array.from(new Set(selectedIso)).sort();
-    const existingSet = new Set(existingDates);
-    const newDates = uniqueSelected.filter((date) => !existingSet.has(date));
-    if (newDates.length === 0) {
-      setAddDatesSuccess('Aucune nouvelle date à ajouter.');
-      return;
-    }
-    try {
-      setAddDatesLoading(true);
-      setAddDatesError(null);
-      const res = await fetch('/api/admin/residency-occurrences', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ residency_id: residencyIdValue, dates: newDates }),
-      });
-      const json = await res.json();
-      if (!json.ok) {
-        const message =
-          json.error === 'MISSING_FIELDS'
-            ? 'Merci de sélectionner au moins une date.'
-            : labelForError(json.error) || 'Ajout impossible';
-        throw new Error(message);
-      }
-      const previewDates = newDates.slice(0, 8).map((date) => fmtDateFR(date));
-      const suffix = newDates.length > 8 ? '…' : '';
-      setAddDatesSuccess(
-        `✅ ${newDates.length} date${newDates.length > 1 ? 's' : ''} ajoutée${
-          newDates.length > 1 ? 's' : ''
-        } : ${previewDates.join(', ')}${suffix}`
-      );
-      await loadData();
-      setAddDatesOpen(false);
-    } catch (e: any) {
-      setAddDatesError(e?.message ?? 'Erreur lors de l’ajout des dates');
-    } finally {
-      setAddDatesLoading(false);
-    }
-  }
-
-  function cancelEditConditions() {
-    if (!residency) return;
-    setEditLodging(!!residency.lodging_included);
-    setEditMeals(!!residency.meals_included);
-    setEditCompanion(!!residency.companion_included);
-    setEditTermsMode(normalizeTermsMode(residency.terms_mode));
-    setEditFeeAmount(
-      typeof residency.fee_amount_cents === 'number'
-        ? String((residency.fee_amount_cents / 100).toFixed(2)).replace(/\.00$/, '')
-        : ''
-    );
-    setEditFeeIsNet(residency.fee_is_net ?? true);
-    setIsEditingConditions(false);
   }
 
   async function deleteResidency() {
@@ -1193,24 +984,54 @@ export default function AdminResidencyDetailPage({
     }
   }
 
-  async function deleteOccurrence(occurrenceId: string) {
+  async function sendInvitations() {
+    if (!residency) return;
     try {
       setActionLoading(true);
-      const res = await fetch('/api/admin/residency-occurrences', {
-        method: 'DELETE',
+      const artistIds = Object.keys(selectedArtists).filter((id) => selectedArtists[id]);
+      if (artistIds.length === 0) {
+        setError('Veuillez selectionner un artiste.');
+        setActionLoading(false);
+        return;
+      }
+      const res = await fetch('/api/admin/residencies/invitations', {
+        method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: occurrenceId }),
+        body: JSON.stringify({ residency_id: residency.id, artist_ids: artistIds }),
       });
       const json = await res.json();
-      if (!json.ok) throw new Error(json.error || 'Suppression impossible');
+      if (!json.ok) throw new Error(json.error || 'Envoi impossible');
+      setSelectedArtists({});
       await loadData();
     } catch (e: any) {
-      setError(e?.message ?? 'Erreur lors de la suppression');
+      setError(e?.message ?? 'Erreur lors de l\'envoi');
     } finally {
       setActionLoading(false);
     }
   }
+
+  function copyAddress(address: string) {
+    navigator.clipboard.writeText(address);
+    setCopyMessage('Adresse copiée.');
+    window.setTimeout(() => setCopyMessage(''), 2000);
+  }
+
+  useEffect(() => {
+    loadData();
+    loadArtists();
+    if (typeof window !== 'undefined') setOrigin(window.location.origin);
+  }, []);
+
+  const filteredArtists = useMemo(() => {
+    const query = searchArtist.trim().toLowerCase();
+    if (!query) return artists;
+    return artists.filter((a) =>
+      [a.stage_name, a.full_name, a.email].some((value) =>
+        String(value ?? '').toLowerCase().includes(query)
+      )
+    );
+  }, [artists, searchArtist]);
 
   if (loading) return <div className="text-slate-500">Chargement…</div>;
   if (error) {
@@ -1227,7 +1048,7 @@ export default function AdminResidencyDetailPage({
 
   if (!residency) {
     return (
-        <div className="space-y-3">
+      <div className="space-y-3">
         <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -1255,58 +1076,42 @@ export default function AdminResidencyDetailPage({
   const mapLink = resolvedAddress
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(resolvedAddress)}`
     : null;
-  const normalizedTermsMode = normalizeTermsMode(residency.terms_mode);
-  const weekSummary = (week: ResidencyWeek): DateStatusSummary => {
-    const dates = enumerateDates(week.start_date_sun, week.end_date_sun);
-    const summaries = dates.map((d) => dateStatusMap[d]).filter(Boolean) as DateStatusSummary[];
-    if (summaries.length === 0) {
-      return {
-        status: 'EMPTY',
-        confirmedArtists: [],
-        invitedCount: 0,
-        declinedCount: 0,
-        invitedArtists: [],
-      };
-    }
 
-    let anyConfirmed = false;
-    let anyPending = false;
-    let anyDeclined = false;
-    let invitedCount = 0;
-    let declinedCount = 0;
-    const confirmedArtists: string[] = [];
-    const invitedArtists: { name: string; status: string }[] = [];
+  const tabs = [
+    { id: 'agenda', label: 'Agenda' },
+    { id: 'conditions', label: 'Conditions' },
+    { id: 'roadmap', label: 'Feuille de route' },
+    { id: 'settings', label: 'Parametres' },
+  ] as const;
 
-    summaries.forEach((s) => {
-      if (s.status === 'CONFIRMED') anyConfirmed = true;
-      if (s.status === 'PENDING') anyPending = true;
-      if (s.status === 'DECLINED') anyDeclined = true;
-      invitedCount += s.invitedCount;
-      declinedCount += s.declinedCount;
-      invitedArtists.push(...s.invitedArtists);
-      confirmedArtists.push(...s.confirmedArtists);
+  const currentRoadmapData = useMemo(() => {
+    if (!residency) return null;
+    if (!roadmapSelection) return null;
+    const contextLabel =
+      roadmapSelection.kind === 'week'
+        ? `${fmtDateFR(roadmapSelection.week.start_date_sun)} → ${fmtDateFR(roadmapSelection.week.end_date_sun)}`
+        : fmtDateFR(roadmapSelection.date);
+    return buildRoadmapData({
+      residencyName: residency.name,
+      contextLabel,
+      programType: editProgramType,
+      weekType: roadmapSelection.kind === 'week' ? mapWeekType(roadmapSelection.week.week_type) : null,
+      conditions: conditionsDraft,
+      overrides: roadmapOverrides,
     });
+  }, [residency, roadmapSelection, conditionsDraft, roadmapOverrides, editProgramType]);
 
-    const uniqueConfirmed = Array.from(new Set(confirmedArtists));
-    let status: DateStatusSummary['status'] = 'EMPTY';
-    if (anyConfirmed) {
-      status = 'CONFIRMED';
-    } else if (invitedCount === 0) {
-      status = 'EMPTY';
-    } else if (!anyPending && anyDeclined) {
-      status = 'DECLINED';
-    } else {
-      status = 'PENDING';
+  const roadmapPdfHref = useMemo(() => {
+    if (!residency || !roadmapSelection) return '';
+    if (roadmapSelection.kind === 'week') {
+      return `/api/admin/roadmap/pdf?residency_id=${encodeURIComponent(
+        residency.id
+      )}&week_id=${encodeURIComponent(roadmapSelection.week.id)}`;
     }
-
-    return {
-      status,
-      confirmedArtists: uniqueConfirmed,
-      invitedCount,
-      declinedCount,
-      invitedArtists,
-    };
-  };
+    return `/api/admin/roadmap/pdf?residency_id=${encodeURIComponent(
+      residency.id
+    )}&date=${encodeURIComponent(roadmapSelection.date)}`;
+  }, [residency, roadmapSelection]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-8">
@@ -1323,744 +1128,1175 @@ export default function AdminResidencyDetailPage({
         </div>
       </header>
 
-      <section className="rounded-xl border p-4 space-y-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2">
-            <h2 className="font-semibold">Lieu de la prestation</h2>
-            {resolvedAddress ? (
-              <div className="text-sm text-slate-700 space-y-1">
-                <div>{residency.event_address_line1 ?? clientRow?.default_event_address_line1}</div>
-                {resolvedLine2 ? <div>{resolvedLine2}</div> : null}
-                <div>
-                  {(residency.event_address_zip ?? clientRow?.default_event_address_zip) || ''}{' '}
-                  {(residency.event_address_city ?? clientRow?.default_event_address_city) || ''}
-                </div>
-                {residency.event_address_country || clientRow?.default_event_address_country ? (
-                  <div>{residency.event_address_country ?? clientRow?.default_event_address_country}</div>
+      <nav className="flex flex-wrap gap-2">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={
+              activeTab === tab.id
+                ? 'btn btn-primary'
+                : 'btn border border-slate-200 bg-white'
+            }
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      {success ? (
+        <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+          {success}
+        </div>
+      ) : null}
+
+      {activeTab === 'agenda' ? (
+        <div className="space-y-6">
+          <section className="rounded-xl border p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-2">
+                <h2 className="font-semibold">Lieu de la prestation</h2>
+                {resolvedAddress ? (
+                  <div className="text-sm text-slate-700 space-y-1">
+                    <div>{residency.event_address_line1 ?? clientRow?.default_event_address_line1}</div>
+                    {resolvedLine2 ? <div>{resolvedLine2}</div> : null}
+                    <div>
+                      {(residency.event_address_zip ?? clientRow?.default_event_address_zip) || ''}{' '}
+                      {(residency.event_address_city ?? clientRow?.default_event_address_city) || ''}
+                    </div>
+                    {residency.event_address_country || clientRow?.default_event_address_country ? (
+                      <div>{residency.event_address_country ?? clientRow?.default_event_address_country}</div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-500">Adresse non renseignée.</div>
+                )}
+                {resolvedAddress ? (
+                  <span className="inline-flex text-xs px-2 py-1 rounded-full border text-slate-600 w-fit">
+                    {usesResidencyAddress ? 'Adresse programmation' : 'Adresse par defaut'}
+                  </span>
                 ) : null}
               </div>
-            ) : (
-              <div className="text-sm text-slate-500">Adresse non renseignée.</div>
-            )}
-            {resolvedAddress ? (
-              <span className="inline-flex text-xs px-2 py-1 rounded-full border text-slate-600 w-fit">
-                {usesResidencyAddress ? 'Adresse programmation' : 'Adresse par défaut'}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          {mapLink ? (
-            <a href={mapLink} target="_blank" className="btn btn-primary" rel="noreferrer">
-              Ouvrir dans Google Maps
-            </a>
-          ) : (
-            <button className="btn btn-primary" onClick={() => setShowAddressModal(true)}>
-              Ajouter une adresse
-            </button>
-          )}
-          {resolvedAddress ? (
-            <button className="btn" onClick={() => copyAddress(resolvedAddress)}>
-              Copier l’adresse
-            </button>
-          ) : null}
-          {copyMessage ? <span className="text-xs text-slate-500">{copyMessage}</span> : null}
-        </div>
-      </section>
-
-      <section className="rounded-xl border p-4 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-semibold">Conditions</h2>
-          {!isEditingConditions ? (
-            <button
-              className="btn"
-              onClick={() => setIsEditingConditions(true)}
-              disabled={actionLoading}
-            >
-              Modifier
-            </button>
-          ) : null}
-        </div>
-        {!isEditingConditions ? (
-          <>
-            {normalizedTermsMode === 'SIMPLE_FEE' ? (
-              <div className="text-sm text-slate-700">
-                Cachet unique :{' '}
-                <strong>
-                  {typeof residency.fee_amount_cents === 'number'
-                    ? `${(residency.fee_amount_cents / 100).toLocaleString('fr-FR')} ${residency.fee_currency ?? 'EUR'}`
-                    : '—'}
-                </strong>{' '}
-                {residency.fee_is_net === false ? '(brut)' : '(net)'}
-              </div>
-            ) : null}
-            {normalizedTermsMode === 'RESIDENCY_WEEKLY' ? (
-              <div className="flex flex-wrap gap-2 text-xs">
-                <span className="px-2 py-1 rounded-full border">
-                  {residency.lodging_included ? 'Logement inclus' : 'Logement non inclus'}
-                </span>
-                <span className="px-2 py-1 rounded-full border">
-                  {residency.meals_included ? 'Repas inclus' : 'Repas non inclus'}
-                </span>
-                <span className="px-2 py-1 rounded-full border">
-                  {residency.companion_included ? 'Accompagnant inclus' : 'Accompagnant non inclus'}
-                </span>
-              </div>
-            ) : null}
-            {normalizedTermsMode === 'RESIDENCY_WEEKLY' ? (
-              <div className="text-sm text-slate-600">
-                Semaine calme: 2 prestations • 1 cachet (150€ net)
-                <br />
-                Semaine forte: 4 prestations • 2 cachets (300€ net)
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <label className="text-sm font-medium">Type de conditions</label>
-              <select
-                className="border rounded-lg px-2 py-1 text-sm"
-                value={editTermsMode}
-                onChange={(e) => setEditTermsMode(e.target.value as 'SIMPLE_FEE' | 'RESIDENCY_WEEKLY')}
-              >
-                <option value="SIMPLE_FEE">Cachet unique</option>
-                <option value="RESIDENCY_WEEKLY">Résidence (semaines calme/forte)</option>
-              </select>
             </div>
-            {editTermsMode === 'SIMPLE_FEE' ? (
-              <div className="grid gap-3 md:grid-cols-[200px_auto] items-center">
+            <div className="flex flex-wrap gap-2 items-center">
+              {mapLink ? (
+                <a href={mapLink} target="_blank" className="btn btn-primary" rel="noreferrer">
+                  Ouvrir dans Google Maps
+                </a>
+              ) : (
+                <button className="btn btn-primary" onClick={() => setShowAddressModal(true)}>
+                  Ajouter une adresse
+                </button>
+              )}
+              {resolvedAddress ? (
+                <button className="btn" onClick={() => copyAddress(resolvedAddress)}>
+                  Copier l’adresse
+                </button>
+              ) : null}
+              {copyMessage ? <span className="text-xs text-slate-500">{copyMessage}</span> : null}
+            </div>
+          </section>
+
+          {residency.mode !== 'DATES' ? (
+            <section className="rounded-xl border p-4 space-y-4">
+              <h2 className="font-semibold">Inviter des artistes</h2>
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
                 <input
                   className="border rounded-lg px-3 py-2"
-                  placeholder="Montant (EUR)"
-                  value={editFeeAmount}
-                  onChange={(e) => setEditFeeAmount(e.target.value)}
+                  placeholder="Rechercher un artiste"
+                  value={searchArtist}
+                  onChange={(e) => setSearchArtist(e.target.value)}
                 />
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={editFeeIsNet}
-                    onChange={(e) => setEditFeeIsNet(e.target.checked)}
-                  />
-                  Cachet net
-                </label>
+                <button className="btn btn-primary" onClick={sendInvitations} disabled={actionLoading}>
+                  Envoyer les demandes
+                </button>
               </div>
-            ) : null}
-            {editTermsMode === 'RESIDENCY_WEEKLY' ? (
-              <div className="flex flex-wrap gap-4 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editLodging}
-                    onChange={(e) => setEditLodging(e.target.checked)}
-                  />
-                  Logement inclus
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editMeals}
-                    onChange={(e) => setEditMeals(e.target.checked)}
-                  />
-                  Repas inclus
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={editCompanion}
-                    onChange={(e) => setEditCompanion(e.target.checked)}
-                  />
-                  Accompagnant inclus
-                </label>
+              <div className="grid gap-2 md:grid-cols-2">
+                {filteredArtists.map((a) => (
+                  <label key={a.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!selectedArtists[a.id]}
+                      onChange={(e) =>
+                        setSelectedArtists((prev) => ({ ...prev, [a.id]: e.target.checked }))
+                      }
+                    />
+                    <span>
+                      {a.stage_name || a.full_name || 'Artiste'} {a.email ? `• ${a.email}` : ''}
+                    </span>
+                  </label>
+                ))}
               </div>
-            ) : null}
-            {editTermsMode === 'RESIDENCY_WEEKLY' ? (
-              <div className="text-sm text-slate-600">
-                Semaine calme: 2 prestations • 1 cachet (150€ net)
-                <br />
-                Semaine forte: 4 prestations • 2 cachets (300€ net)
-              </div>
-            ) : null}
-          </div>
-        )}
-        {success ? (
-          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
-            {success}
-          </div>
-        ) : null}
-      {isEditingConditions ? (
-        <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
-            Enregistrer
-          </button>
-          <button className="btn" onClick={cancelEditConditions} disabled={actionLoading}>
-            Annuler
-          </button>
-        </div>
-      ) : null}
-    </section>
-
-      <section className="rounded-xl border p-4 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="font-semibold">Feuilles de route</h2>
-          {roadmapLoading ? <span className="text-xs text-slate-500">Chargement…</span> : null}
-        </div>
-        {roadmapError ? (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">
-            {roadmapError}
-          </div>
-        ) : null}
-        {roadmapSuccess ? (
-          <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
-            {roadmapSuccess}
-          </div>
-        ) : null}
-        <div className="grid md:grid-cols-[1fr_auto] gap-3 items-end">
-          <div>
-            <label className="text-sm font-medium">Dupliquer depuis une autre résidence</label>
-            <select
-              className="border rounded-lg px-3 py-2 w-full"
-              value={roadmapCopyFrom}
-              onChange={(e) => setRoadmapCopyFrom(e.target.value)}
-            >
-              <option value="">Sélectionner une résidence</option>
-              {roadmapResidencies.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            className="btn"
-            onClick={duplicateRoadmapsFromResidency}
-            disabled={!roadmapCopyFrom || roadmapLoading}
-          >
-            Dupliquer
-          </button>
-        </div>
-        <div className="grid md:grid-cols-2 gap-4">
-          <RoadmapEditorCard
-            weekType="calm"
-            template={roadmapDrafts.calm}
-            onCreate={() => ensureRoadmapDraft('calm')}
-            onSave={() => saveRoadmapTemplate('calm')}
-            onUpdateTitle={(title) => updateRoadmapTitle('calm', title)}
-            onUpdateContent={(updater) => updateRoadmapContent('calm', updater)}
-            loading={roadmapLoading}
-            createLabel={
-              isL2A(residency?.name)
-                ? 'Créer la feuille semaine calme (modèle L2A)'
-                : 'Créer la feuille semaine calme'
-            }
-          />
-          <RoadmapEditorCard
-            weekType="strong"
-            template={roadmapDrafts.strong}
-            onCreate={() => ensureRoadmapDraft('strong')}
-            onSave={() => saveRoadmapTemplate('strong')}
-            onUpdateTitle={(title) => updateRoadmapTitle('strong', title)}
-            onUpdateContent={(updater) => updateRoadmapContent('strong', updater)}
-            loading={roadmapLoading}
-            createLabel={
-              roadmapDrafts.calm
-                ? 'Dupliquer semaine calme (+2 after-ski)'
-                : 'Créer la feuille semaine forte'
-            }
-          />
-        </div>
-      </section>
-
-      <section className="rounded-xl border p-4 space-y-3">
-        <h2 className="font-semibold">Parametres de la residence</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          <input
-            className="border rounded-lg px-3 py-2"
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-          />
-          <div className="flex flex-wrap gap-4 text-sm items-center">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editLodging}
-                onChange={(e) => setEditLodging(e.target.checked)}
-              />
-              Logement inclus
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editMeals}
-                onChange={(e) => setEditMeals(e.target.checked)}
-              />
-              Repas inclus
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editCompanion}
-                onChange={(e) => setEditCompanion(e.target.checked)}
-              />
-              Accompagnant inclus
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editIsPublic}
-                onChange={(e) => setEditIsPublic(e.target.checked)}
-              />
-              Publier la programmation
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={editIsOpen}
-                onChange={(e) => setEditIsOpen(e.target.checked)}
-              />
-              Ouvrir aux candidatures
-            </label>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={saveResidency} disabled={actionLoading}>
-            Enregistrer
-          </button>
-          <button className="btn" onClick={deleteResidency} disabled={actionLoading}>
-            Supprimer la residence
-          </button>
-        </div>
-      </section>
-
-      {residency.mode !== 'DATES' ? (
-        <section className="rounded-xl border p-4 space-y-4">
-          <h2 className="font-semibold">Inviter des artistes</h2>
-          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-            <input
-              className="border rounded-lg px-3 py-2"
-              placeholder="Rechercher un artiste"
-              value={searchArtist}
-              onChange={(e) => setSearchArtist(e.target.value)}
-            />
-            <button className="btn btn-primary" onClick={sendInvitations} disabled={actionLoading}>
-              Envoyer les demandes
-            </button>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2">
-            {filteredArtists.map((a) => (
-              <label key={a.id} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!!selectedArtists[a.id]}
-                  onChange={(e) =>
-                    setSelectedArtists((prev) => ({ ...prev, [a.id]: e.target.checked }))
-                  }
-                />
-                <span>
-                  {a.stage_name || a.full_name || 'Artiste'} {a.email ? `• ${a.email}` : ''}
-                </span>
-              </label>
-            ))}
-          </div>
-          {invitations.length > 0 ? (
-            <div className="text-sm text-slate-500">
-              {invitations.length} invitation{invitations.length > 1 ? 's' : ''} envoyee{invitations.length > 1 ? 's' : ''}.
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {residency.mode !== 'DATES' ? (
-        <section className="rounded-xl border p-4 space-y-3">
-          <h2 className="font-semibold">Invitations</h2>
-          {invitations.length === 0 ? (
-            <div className="text-sm text-slate-500">Aucune invitation pour le moment.</div>
-          ) : (
-            invitations.map((inv) => {
-              const tf = inv.target_filter || {};
-              const name = tf.artist_name || tf.artist_email || 'Artiste';
-              const link = origin ? `${origin}/availability/${inv.token}` : `/availability/${inv.token}`;
-              return (
-                <div key={inv.id} className="flex flex-col gap-2 border rounded-lg p-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">{name}</div>
-                    <div className="text-xs text-slate-500">{inv.status}</div>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    {inv.sent_at ? `Envoyee: ${fmtDateFR(inv.sent_at)}` : 'Envoyee: —'}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <code className="text-xs bg-slate-50 border rounded px-2 py-1">{link}</code>
-                    <button
-                      className="btn"
-                      onClick={() => navigator.clipboard.writeText(link)}
-                    >
-                      Copier le lien
-                    </button>
-                  </div>
+              {invitations.length > 0 ? (
+                <div className="text-sm text-slate-500">
+                  {invitations.length} invitation{invitations.length > 1 ? 's' : ''} envoyee
+                  {invitations.length > 1 ? 's' : ''}.
                 </div>
-              );
-            })
-          )}
-        </section>
-      ) : null}
-
-      {residency.mode === 'DATES' ? (
-        <section className="space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-semibold">Dates</h2>
-            <button
-              className="btn"
-              onClick={() => {
-                setAddDatesOpen((v) => !v);
-                setAddDatesError(null);
-                setAddDatesSuccess(null);
-              }}
-            >
-              Ajouter des dates
-            </button>
-          </div>
-          {addDatesSuccess ? (
-            <div className="text-sm text-emerald-600">{addDatesSuccess}</div>
-          ) : null}
-          {addDatesOpen ? (
-            <div className="rounded-xl border p-4 space-y-3">
-              <DayPicker
-                mode="multiple"
-                selected={selectedDates}
-                onSelect={(dates) => {
-                  setSelectedDates(dates ?? []);
-                  setAddDatesError(null);
-                  setAddDatesSuccess(null);
-                }}
-              />
-              <div className="text-sm text-slate-500">
-                {selectedDates.length} date{selectedDates.length > 1 ? 's' : ''} sélectionnée
-                {selectedDates.length > 1 ? 's' : ''}.
-              </div>
-              {addDatesError ? (
-                <div className="text-sm text-rose-600">{addDatesError}</div>
               ) : null}
-              <div className="flex flex-wrap gap-2">
+            </section>
+          ) : null}
+
+          {residency.mode !== 'DATES' ? (
+            <section className="rounded-xl border p-4 space-y-3">
+              <h2 className="font-semibold">Invitations</h2>
+              {invitations.length === 0 ? (
+                <div className="text-sm text-slate-500">Aucune invitation pour le moment.</div>
+              ) : (
+                invitations.map((inv) => {
+                  const tf = inv.target_filter || {};
+                  const name = tf.artist_name || tf.artist_email || 'Artiste';
+                  const link = origin ? `${origin}/availability/${inv.token}` : `/availability/${inv.token}`;
+                  return (
+                    <div key={inv.id} className="flex flex-col gap-2 border rounded-lg p-3 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-medium">{name}</div>
+                        <div className="text-xs text-slate-500">{inv.status}</div>
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {inv.sent_at ? `Envoyee: ${fmtDateFR(inv.sent_at)}` : 'Envoyee: —'}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="text-xs bg-slate-50 border rounded px-2 py-1">{link}</code>
+                        <button
+                          className="btn"
+                          onClick={() => navigator.clipboard.writeText(link)}
+                        >
+                          Copier le lien
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </section>
+          ) : null}
+
+          {residency.mode === 'DATES' ? (
+            <section className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-semibold">Dates</h2>
                 <button
                   className="btn"
                   onClick={() => {
-                    setAddDatesOpen(false);
-                    setSelectedDates([]);
+                    setAddDatesOpen((v) => !v);
                     setAddDatesError(null);
                     setAddDatesSuccess(null);
                   }}
                 >
-                  Annuler
-                </button>
-                <button
-                  className="btn btn-primary"
-                  disabled={addDatesLoading || selectedDates.length === 0}
-                  onClick={addDates}
-                >
-                  {addDatesLoading ? 'Ajout en cours…' : 'Ajouter'}
+                  Ajouter des dates
                 </button>
               </div>
-            </div>
-          ) : null}
-          {occurrences.length === 0 ? (
-            <div className="text-sm text-slate-500">Aucune date enregistree.</div>
+              {addDatesSuccess ? (
+                <div className="text-sm text-emerald-600">{addDatesSuccess}</div>
+              ) : null}
+              {addDatesOpen ? (
+                <div className="rounded-xl border p-4 space-y-3">
+                  <DayPicker
+                    mode="multiple"
+                    selected={selectedDates}
+                    onSelect={(dates) => {
+                      setSelectedDates(dates ?? []);
+                      setAddDatesError(null);
+                      setAddDatesSuccess(null);
+                    }}
+                  />
+                  <div className="text-sm text-slate-500">
+                    {selectedDates.length} date{selectedDates.length > 1 ? 's' : ''} sélectionnée
+                    {selectedDates.length > 1 ? 's' : ''}.
+                  </div>
+                  {addDatesError ? (
+                    <div className="text-sm text-rose-600">{addDatesError}</div>
+                  ) : null}
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="btn"
+                      onClick={() => {
+                        setAddDatesOpen(false);
+                        setSelectedDates([]);
+                        setAddDatesError(null);
+                        setAddDatesSuccess(null);
+                      }}
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      disabled={addDatesLoading || selectedDates.length === 0}
+                      onClick={addDates}
+                    >
+                      {addDatesLoading ? 'Ajout en cours…' : 'Ajouter'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {occurrences.length === 0 ? (
+                <div className="text-sm text-slate-500">Aucune date enregistree.</div>
+              ) : (
+                <div className="rounded-xl border divide-y">
+                  {occurrences.map((occ) => {
+                    const summary = dateStatusMap[occ.date];
+                    const status = summary?.status ?? 'EMPTY';
+                    const badgeClass =
+                      status === 'CONFIRMED'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : status === 'PENDING'
+                        ? 'bg-amber-100 text-amber-700'
+                        : status === 'DECLINED'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-slate-100 text-slate-600';
+                    return (
+                      <div key={occ.id} className="flex flex-wrap items-start justify-between gap-3 p-3 text-sm">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="font-medium">{fmtDateFR(occ.date)}</div>
+                            <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                              {status === 'DECLINED'
+                                ? 'Tous refusés'
+                                : status === 'EMPTY'
+                                ? 'Aucun artiste'
+                                : labelForStatus(status)}
+                            </span>
+                          </div>
+                          {summary && status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
+                            <div className="text-xs text-slate-600">
+                              Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
+                            </div>
+                          ) : null}
+                          {summary && status === 'PENDING' ? (
+                            <div className="text-xs text-slate-600">
+                              Invitations envoyées: {summary.invitedCount}
+                              {summary.invitedArtists.length > 0
+                                ? ` • ${summary.invitedArtists
+                                    .map((a) => `${a.name} (${a.status})`)
+                                    .join(', ')}`
+                                : ''}
+                            </div>
+                          ) : null}
+                          {summary && status === 'DECLINED' ? (
+                            <div className="text-xs text-slate-600">
+                              Refusés: {summary.declinedCount}
+                            </div>
+                          ) : null}
+                          {status === 'EMPTY' || (status === 'PENDING' && (summary?.invitedCount ?? 0) === 0) ? (
+                            <Link
+                              href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&event_date=${encodeURIComponent(occ.date)}`}
+                              className="btn btn-primary"
+                            >
+                              Inviter un artiste
+                            </Link>
+                          ) : null}
+                          {occ.notes ? (
+                            <div className="text-xs text-slate-500">{occ.notes}</div>
+                          ) : null}
+                          <div className="pt-2 space-y-2">
+                            <div className="text-xs font-semibold text-slate-700">
+                              Candidatures ({residencyApplications.filter((a) => a.date === occ.date).length})
+                            </div>
+                            {residencyApplications.filter((a) => a.date === occ.date).length === 0 ? (
+                              <div className="text-xs text-slate-500">Aucune candidature.</div>
+                            ) : (
+                              residencyApplications
+                                .filter((a) => a.date === occ.date)
+                                .sort((a, b) => {
+                                  const aName = Array.isArray(a.artists)
+                                    ? a.artists[0]?.stage_name ?? ''
+                                    : a.artists?.stage_name ?? '';
+                                  const bName = Array.isArray(b.artists)
+                                    ? b.artists[0]?.stage_name ?? ''
+                                    : b.artists?.stage_name ?? '';
+                                  return aName.localeCompare(bName, 'fr');
+                                })
+                                .map((app) => {
+                                  const artist = Array.isArray(app.artists)
+                                    ? app.artists[0]
+                                    : app.artists;
+                                  const statusLabel = labelForStatus(app.status);
+                                  const badge =
+                                    app.status === 'CONFIRMED'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : app.status === 'PENDING'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : app.status === 'DECLINED'
+                                      ? 'bg-rose-100 text-rose-700'
+                                      : 'bg-slate-100 text-slate-600';
+                                  return (
+                                    <div key={app.id} className="flex flex-wrap items-center justify-between gap-2 text-xs border rounded-lg p-2">
+                                      <div className="space-y-1">
+                                        <div className="font-medium">
+                                          {artist?.stage_name || 'Artiste'}
+                                        </div>
+                                        <div className="text-slate-500">
+                                          {artist?.contact_email ? `Email: ${artist.contact_email}` : null}
+                                          {artist?.contact_phone ? ` • Tel: ${artist.contact_phone}` : null}
+                                        </div>
+                                        <div className="text-slate-500">
+                                          {artist?.instagram_url ? `Instagram: ${artist.instagram_url}` : null}
+                                          {artist?.website_url ? ` • Site: ${artist.website_url}` : null}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-xs px-2 py-1 rounded-full ${badge}`}>
+                                          {statusLabel}
+                                        </span>
+                                        {app.status === 'PENDING' ? (
+                                          <>
+                                            <button
+                                              className="btn btn-primary"
+                                              disabled={actionLoading}
+                                              onClick={() => updateResidencyApplicationStatus(app.id, 'CONFIRMED')}
+                                            >
+                                              Confirmer
+                                            </button>
+                                            <button
+                                              className="btn"
+                                              disabled={actionLoading}
+                                              onClick={() => updateResidencyApplicationStatus(app.id, 'DECLINED')}
+                                            >
+                                              Refuser
+                                            </button>
+                                          </>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          className="btn"
+                          onClick={() => deleteOccurrence(occ.id)}
+                          disabled={actionLoading}
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           ) : (
-            <div className="rounded-xl border divide-y">
-              {occurrences.map((occ) => {
-                const summary = dateStatusMap[occ.date];
-                const status = summary?.status ?? 'EMPTY';
+            <section className="space-y-4">
+              <h2 className="font-semibold">Semaines</h2>
+              {weeks.map((w) => {
+                const applications = toArray(w.week_applications) as WeekApplication[];
+                const bookings = toArray(w.week_bookings) as WeekBooking[];
+                const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
+                const summary = (() => {
+                  const dates: string[] = [];
+                  const start = new Date(`${w.start_date_sun}T12:00:00`);
+                  const end = new Date(`${w.end_date_sun}T12:00:00`);
+                  let cursor = start;
+                  while (cursor <= end) {
+                    dates.push(toISODate(cursor));
+                    const next = new Date(cursor);
+                    next.setDate(next.getDate() + 1);
+                    cursor = next;
+                  }
+                  const summaries = dates.map((d) => dateStatusMap[d]).filter(Boolean) as DateStatusSummary[];
+                  if (summaries.length === 0) {
+                    return {
+                      status: 'EMPTY',
+                      confirmedArtists: [],
+                      invitedCount: 0,
+                      declinedCount: 0,
+                      invitedArtists: [],
+                    } as DateStatusSummary;
+                  }
+
+                  let anyConfirmed = false;
+                  let anyPending = false;
+                  let anyDeclined = false;
+                  let invitedCount = 0;
+                  let declinedCount = 0;
+                  const confirmedArtists: string[] = [];
+                  const invitedArtists: { name: string; status: string }[] = [];
+
+                  summaries.forEach((s) => {
+                    if (s.status === 'CONFIRMED') anyConfirmed = true;
+                    if (s.status === 'PENDING') anyPending = true;
+                    if (s.status === 'DECLINED') anyDeclined = true;
+                    invitedCount += s.invitedCount;
+                    declinedCount += s.declinedCount;
+                    invitedArtists.push(...s.invitedArtists);
+                    confirmedArtists.push(...s.confirmedArtists);
+                  });
+
+                  const uniqueConfirmed = Array.from(new Set(confirmedArtists));
+                  let status: DateStatusSummary['status'] = 'EMPTY';
+                  if (anyConfirmed) {
+                    status = 'CONFIRMED';
+                  } else if (invitedCount === 0) {
+                    status = 'EMPTY';
+                  } else if (!anyPending && anyDeclined) {
+                    status = 'DECLINED';
+                  } else {
+                    status = 'PENDING';
+                  }
+
+                  return {
+                    status,
+                    confirmedArtists: uniqueConfirmed,
+                    invitedCount,
+                    declinedCount,
+                    invitedArtists,
+                  } as DateStatusSummary;
+                })();
                 const badgeClass =
-                  status === 'CONFIRMED'
+                  summary.status === 'CONFIRMED'
                     ? 'bg-emerald-100 text-emerald-700'
-                    : status === 'PENDING'
+                    : summary.status === 'PENDING'
                     ? 'bg-amber-100 text-amber-700'
-                    : status === 'DECLINED'
+                    : summary.status === 'DECLINED'
                     ? 'bg-rose-100 text-rose-700'
                     : 'bg-slate-100 text-slate-600';
                 return (
-                  <div key={occ.id} className="flex flex-wrap items-start justify-between gap-3 p-3 text-sm">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <div className="font-medium">{fmtDateFR(occ.date)}</div>
-                        <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
-                          {status === 'DECLINED'
-                            ? 'Tous refusés'
-                            : status === 'EMPTY'
-                            ? 'Aucun artiste'
-                            : labelForStatus(status)}
-                        </span>
+                  <div key={w.id} className="rounded-xl border p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="font-semibold">
+                          {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
+                        </div>
+                        <div className="text-sm text-slate-500">
+                          {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
+                          {w.performances_count} prestations • {formatMoney(w.fee_cents)} net
+                        </div>
                       </div>
-                      {summary && status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
-                        <div className="text-xs text-slate-600">
-                          Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
-                        </div>
-                      ) : null}
-                      {summary && status === 'PENDING' ? (
-                        <div className="text-xs text-slate-600">
-                          Invitations envoyées: {summary.invitedCount}
-                          {summary.invitedArtists.length > 0
-                            ? ` • ${summary.invitedArtists
-                                .map((a) => `${a.name} (${a.status})`)
-                                .join(', ')}`
-                            : ''}
-                        </div>
-                      ) : null}
-                      {summary && status === 'DECLINED' ? (
-                        <div className="text-xs text-slate-600">
-                          Refusés: {summary.declinedCount}
-                        </div>
-                      ) : null}
-                      {status === 'EMPTY' || (status === 'PENDING' && (summary?.invitedCount ?? 0) === 0) ? (
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
+                          {summary.status === 'DECLINED'
+                            ? 'Tous refusés'
+                            : summary.status === 'EMPTY'
+                            ? 'Aucun artiste'
+                            : labelForStatus(summary.status)}
+                        </span>
+                        <select
+                          className="border rounded-lg px-2 py-1 text-sm"
+                          value={w.type}
+                          disabled={w.status === 'CONFIRMED' || actionLoading}
+                          onChange={(e) => updateWeekType(w, e.target.value as 'CALM' | 'BUSY')}
+                        >
+                          <option value="CALM">CALME</option>
+                          <option value="BUSY">FORTE</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {summary.status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
+                      <div className="text-xs text-slate-600">
+                        Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
+                      </div>
+                    ) : null}
+                    {summary.status === 'PENDING' ? (
+                      <div className="text-xs text-slate-600">
+                        Invitations envoyées: {summary.invitedCount}
+                        {summary.invitedArtists.length > 0
+                          ? ` • ${summary.invitedArtists
+                              .map((a) => `${a.name} (${a.status})`)
+                              .join(', ')}`
+                          : ''}
+                      </div>
+                    ) : null}
+                    {summary.status === 'DECLINED' ? (
+                      <div className="text-xs text-slate-600">
+                        Tous refusés • Invitations: {summary.invitedCount}
+                      </div>
+                    ) : null}
+                    {summary.status === 'EMPTY' ? (
+                      <div>
                         <Link
-                          href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&event_date=${encodeURIComponent(occ.date)}`}
+                          href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&week_start=${encodeURIComponent(w.start_date_sun)}&week_end=${encodeURIComponent(w.end_date_sun)}`}
                           className="btn btn-primary"
                         >
                           Inviter un artiste
                         </Link>
-                      ) : null}
-                      {occ.notes ? (
-                        <div className="text-xs text-slate-500">{occ.notes}</div>
-                      ) : null}
-                      <div className="pt-2 space-y-2">
-                        <div className="text-xs font-semibold text-slate-700">
-                          Candidatures ({residencyApplications.filter((a) => a.date === occ.date).length})
-                        </div>
-                        {residencyApplications.filter((a) => a.date === occ.date).length === 0 ? (
-                          <div className="text-xs text-slate-500">Aucune candidature.</div>
-                        ) : (
-                          residencyApplications
-                            .filter((a) => a.date === occ.date)
-                            .sort((a, b) => {
-                              const aName = Array.isArray(a.artists)
-                                ? a.artists[0]?.stage_name ?? ''
-                                : a.artists?.stage_name ?? '';
-                              const bName = Array.isArray(b.artists)
-                                ? b.artists[0]?.stage_name ?? ''
-                                : b.artists?.stage_name ?? '';
-                              return aName.localeCompare(bName, 'fr');
-                            })
-                            .map((app) => {
-                              const artist = Array.isArray(app.artists)
-                                ? app.artists[0]
-                                : app.artists;
-                              const statusLabel = labelForStatus(app.status);
-                              const badge =
-                                app.status === 'CONFIRMED'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : app.status === 'PENDING'
-                                  ? 'bg-amber-100 text-amber-700'
-                                  : app.status === 'DECLINED'
-                                  ? 'bg-rose-100 text-rose-700'
-                                  : 'bg-slate-100 text-slate-600';
-                              return (
-                                <div key={app.id} className="flex flex-wrap items-center justify-between gap-2 text-xs border rounded-lg p-2">
-                                  <div className="space-y-1">
-                                    <div className="font-medium">
-                                      {artist?.stage_name || 'Artiste'}
-                                    </div>
-                                    <div className="text-slate-500">
-                                      {artist?.contact_email ? `Email: ${artist.contact_email}` : null}
-                                      {artist?.contact_phone ? ` • Tel: ${artist.contact_phone}` : null}
-                                    </div>
-                                    <div className="text-slate-500">
-                                      {artist?.instagram_url ? `Instagram: ${artist.instagram_url}` : null}
-                                      {artist?.website_url ? ` • Site: ${artist.website_url}` : null}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className={`text-xs px-2 py-1 rounded-full ${badge}`}>
-                                      {statusLabel}
-                                    </span>
-                                    {app.status === 'PENDING' ? (
-                                      <>
-                                        <button
-                                          className="btn btn-primary"
-                                          disabled={actionLoading}
-                                          onClick={() => updateResidencyApplicationStatus(app.id, 'CONFIRMED')}
-                                        >
-                                          Confirmer
-                                        </button>
-                                        <button
-                                          className="btn"
-                                          disabled={actionLoading}
-                                          onClick={() => updateResidencyApplicationStatus(app.id, 'DECLINED')}
-                                        >
-                                          Refuser
-                                        </button>
-                                      </>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              );
-                            })
-                        )}
                       </div>
+                    ) : null}
+
+                    {confirmedBooking ? (
+                      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                        Confirme avec{' '}
+                        {Array.isArray(confirmedBooking.artists)
+                          ? confirmedBooking.artists[0]?.stage_name
+                          : confirmedBooking.artists?.stage_name || 'Artiste'}
+                        .
+                      </div>
+                    ) : null}
+
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium">Candidats</div>
+                      {applications.length === 0 ? (
+                        <div className="text-sm text-slate-500">Aucune candidature.</div>
+                      ) : (
+                        applications.map((a) => {
+                          const artistName = Array.isArray(a.artists)
+                            ? a.artists[0]?.stage_name
+                            : a.artists?.stage_name;
+                          return (
+                            <div key={a.id} className="flex items-center justify-between text-sm">
+                              <span>
+                                {artistName || 'Artiste'} • {a.status}
+                              </span>
+                              {w.status === 'OPEN' && a.status === 'APPLIED' ? (
+                                <button
+                                  className="btn btn-primary"
+                                  onClick={() => confirmWeek(w.id, a.artist_id)}
+                                  disabled={actionLoading}
+                                >
+                                  Confirmer
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
-                    <button
-                      className="btn"
-                      onClick={() => deleteOccurrence(occ.id)}
-                      disabled={actionLoading}
-                    >
-                      Supprimer
-                    </button>
+
+                    {w.status === 'CONFIRMED' ? (
+                      <button
+                        className="btn"
+                        onClick={() => cancelConfirmation(w.id)}
+                        disabled={actionLoading}
+                      >
+                        Annuler la confirmation
+                      </button>
+                    ) : null}
+                    {w.status !== 'CONFIRMED' ? (
+                      <button
+                        className="btn"
+                        onClick={() => cancelWeekSlot(w.id)}
+                        disabled={actionLoading}
+                      >
+                        Supprimer le créneau
+                      </button>
+                    ) : (
+                      <button className="btn" disabled>
+                        Supprimer le créneau
+                      </button>
+                    )}
                   </div>
                 );
               })}
-            </div>
+            </section>
           )}
-        </section>
-      ) : (
-        <section className="space-y-4">
-          <h2 className="font-semibold">Semaines</h2>
-          {weeks.map((w) => {
-            const applications = toArray(w.week_applications) as WeekApplication[];
-            const bookings = toArray(w.week_bookings) as WeekBooking[];
-            const confirmedBooking = bookings.find((b) => b.status === 'CONFIRMED');
-            const pendingCount = applications.filter((a) => a.status === 'APPLIED').length;
-            const statusCode =
-              w.status === 'CONFIRMED' ? 'CONFIRMED' : pendingCount > 0 ? 'PENDING' : 'EMPTY';
-            const summary = weekSummary(w);
-            const badgeClass =
-              summary.status === 'CONFIRMED'
-                ? 'bg-emerald-100 text-emerald-700'
-                : summary.status === 'PENDING'
-                ? 'bg-amber-100 text-amber-700'
-                : summary.status === 'DECLINED'
-                ? 'bg-rose-100 text-rose-700'
-                : 'bg-slate-100 text-slate-600';
-            return (
-              <div key={w.id} className="rounded-xl border p-4 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="font-semibold">
-                      {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      {w.type === 'BUSY' ? 'Semaine forte' : 'Semaine calme'} •{' '}
-                      {w.performances_count} prestations • {formatMoney(w.fee_cents)} net
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs uppercase tracking-wide text-slate-500">
-                      {labelForStatus(statusCode)}
-                    </span>
-                    <span className={`text-xs px-2 py-1 rounded-full ${badgeClass}`}>
-                      {summary.status === 'DECLINED'
-                        ? 'Tous refusés'
-                        : summary.status === 'EMPTY'
-                        ? 'Aucun artiste'
-                        : labelForStatus(summary.status)}
-                    </span>
-                    <select
-                      className="border rounded-lg px-2 py-1 text-sm"
-                      value={w.type}
-                      disabled={w.status === 'CONFIRMED' || actionLoading}
-                      onChange={(e) => updateWeekType(w, e.target.value as 'CALM' | 'BUSY')}
-                    >
-                      <option value="CALM">CALME</option>
-                      <option value="BUSY">FORTE</option>
-                    </select>
-                  </div>
-                </div>
+        </div>
+      ) : null}
 
-                {summary.status === 'CONFIRMED' && summary.confirmedArtists.length > 0 ? (
-                  <div className="text-xs text-slate-600">
-                    Artiste(s) confirmé(s): {summary.confirmedArtists.join(', ')}
-                  </div>
-                ) : null}
-                {summary.status === 'PENDING' ? (
-                  <div className="text-xs text-slate-600">
-                    Invitations envoyées: {summary.invitedCount}
-                    {summary.invitedArtists.length > 0
-                      ? ` • ${summary.invitedArtists
-                          .map((a) => `${a.name} (${a.status})`)
-                          .join(', ')}`
-                      : ''}
-                  </div>
-                ) : null}
-                {summary.status === 'DECLINED' ? (
-                  <div className="text-xs text-slate-600">
-                    Tous refusés • Invitations: {summary.invitedCount}
-                  </div>
-                ) : null}
-                {summary.status === 'EMPTY' ? (
-                  <div>
-                    <Link
-                      href={`/admin/requests/new?residency_id=${encodeURIComponent(residency.id)}&week_start=${encodeURIComponent(w.start_date_sun)}&week_end=${encodeURIComponent(w.end_date_sun)}`}
-                      className="btn btn-primary"
-                    >
-                      Inviter un artiste
-                    </Link>
-                  </div>
-                ) : null}
-
-                {confirmedBooking ? (
-                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
-                    Confirme avec{' '}
-                    {Array.isArray(confirmedBooking.artists)
-                      ? confirmedBooking.artists[0]?.stage_name
-                      : confirmedBooking.artists?.stage_name || 'Artiste'}
-                    .
-                  </div>
-                ) : null}
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium">Candidats</div>
-                  {applications.length === 0 ? (
-                    <div className="text-sm text-slate-500">Aucune candidature.</div>
-                  ) : (
-                    applications.map((a) => {
-                      const artistName = Array.isArray(a.artists)
-                        ? a.artists[0]?.stage_name
-                        : a.artists?.stage_name;
-                      return (
-                        <div key={a.id} className="flex items-center justify-between text-sm">
-                          <span>
-                            {artistName || 'Artiste'} • {a.status}
-                          </span>
-                          {w.status === 'OPEN' && a.status === 'APPLIED' ? (
-                            <button
-                              className="btn btn-primary"
-                              onClick={() => confirmWeek(w.id, a.artist_id)}
-                              disabled={actionLoading}
-                            >
-                              Confirmer
-                            </button>
-                          ) : null}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                {w.status === 'CONFIRMED' ? (
-                  <button
-                    className="btn"
-                    onClick={() => cancelConfirmation(w.id)}
-                    disabled={actionLoading}
-                  >
-                    Annuler la confirmation
-                  </button>
-                ) : null}
-                {w.status !== 'CONFIRMED' ? (
-                  <button
-                    className="btn"
-                    onClick={() => cancelWeekSlot(w.id)}
-                    disabled={actionLoading}
-                  >
-                    Supprimer le créneau
-                  </button>
-                ) : (
-                  <button className="btn" disabled>
-                    Supprimer le créneau
-                  </button>
-                )}
+      {activeTab === 'conditions' ? (
+        <div className="space-y-6">
+          <section className="rounded-xl border p-4 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-semibold">Remuneration</h2>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>Programme: {editProgramType === 'MULTI_DATES' ? 'DPF' : 'L2A'}</span>
               </div>
-            );
-          })}
-        </section>
-      )}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={conditionsDraft.remuneration?.is_net ?? true}
+                  onChange={(e) =>
+                    setConditionsDraft((prev) => ({
+                      ...prev,
+                      remuneration: {
+                        ...(prev.remuneration ?? {}),
+                        is_net: e.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Cachet net
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <span className="text-slate-500">Devise</span>
+                <select
+                  className="border rounded-lg px-2 py-1 text-sm"
+                  value={conditionsDraft.remuneration?.currency ?? 'EUR'}
+                  onChange={(e) =>
+                    setConditionsDraft((prev) => ({
+                      ...prev,
+                      remuneration: {
+                        ...(prev.remuneration ?? {}),
+                        currency: e.target.value,
+                      },
+                    }))
+                  }
+                >
+                  <option value="EUR">EUR</option>
+                </select>
+              </label>
+            </div>
+
+            {editProgramType === 'MULTI_DATES' ? (
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={conditionsDraft.remuneration?.per_date?.artist_choice ?? false}
+                    onChange={(e) =>
+                      setConditionsDraft((prev) => ({
+                        ...prev,
+                        remuneration: {
+                          ...(prev.remuneration ?? {}),
+                          mode: 'PER_DATE',
+                          per_date: {
+                            ...(prev.remuneration?.per_date ?? { options: [] }),
+                            artist_choice: e.target.checked,
+                          },
+                        },
+                      }))
+                    }
+                  />
+                  Choix artiste (plusieurs options de cachet)
+                </label>
+
+                {conditionsDraft.remuneration?.per_date?.artist_choice ? (
+                  <div className="space-y-3">
+                    {(conditionsDraft.remuneration?.per_date?.options ?? []).length === 0 ? (
+                      <div className="text-xs text-slate-500">Aucune option definie.</div>
+                    ) : null}
+                    {(conditionsDraft.remuneration?.per_date?.options ?? []).map((opt, idx) => (
+                      <div key={`option-${idx}`} className="grid gap-2 md:grid-cols-[1fr_160px_auto]">
+                        <input
+                          className="border rounded-lg px-3 py-2 text-sm"
+                          placeholder="Option (ex: Duo, DJ set)"
+                          value={opt.label}
+                          onChange={(e) => {
+                            const next = [...(conditionsDraft.remuneration?.per_date?.options ?? [])];
+                            next[idx] = { ...next[idx], label: e.target.value } as RemunerationOption;
+                            setConditionsDraft((prev) => ({
+                              ...prev,
+                              remuneration: {
+                                ...(prev.remuneration ?? {}),
+                                mode: 'PER_DATE',
+                                per_date: {
+                                  ...(prev.remuneration?.per_date ?? {}),
+                                  options: next,
+                                },
+                              },
+                            }));
+                          }}
+                        />
+                        <input
+                          className="border rounded-lg px-3 py-2 text-sm"
+                          placeholder="Montant"
+                          value={formatCentsInput(opt.amount_cents)}
+                          onChange={(e) => {
+                            const cents = parseCents(e.target.value);
+                            const next = [...(conditionsDraft.remuneration?.per_date?.options ?? [])];
+                            next[idx] = { ...next[idx], amount_cents: cents } as RemunerationOption;
+                            setConditionsDraft((prev) => ({
+                              ...prev,
+                              remuneration: {
+                                ...(prev.remuneration ?? {}),
+                                mode: 'PER_DATE',
+                                per_date: {
+                                  ...(prev.remuneration?.per_date ?? {}),
+                                  options: next,
+                                },
+                              },
+                            }));
+                          }}
+                        />
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => {
+                            const next = (conditionsDraft.remuneration?.per_date?.options ?? []).filter(
+                              (_, i) => i !== idx
+                            );
+                            setConditionsDraft((prev) => ({
+                              ...prev,
+                              remuneration: {
+                                ...(prev.remuneration ?? {}),
+                                mode: 'PER_DATE',
+                                per_date: {
+                                  ...(prev.remuneration?.per_date ?? {}),
+                                  options: next,
+                                },
+                              },
+                            }));
+                          }}
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      className="btn"
+                      type="button"
+                      onClick={() => {
+                        const next = [...(conditionsDraft.remuneration?.per_date?.options ?? [])];
+                        next.push({ label: '', amount_cents: undefined });
+                        setConditionsDraft((prev) => ({
+                          ...prev,
+                          remuneration: {
+                            ...(prev.remuneration ?? {}),
+                            mode: 'PER_DATE',
+                            per_date: {
+                              ...(prev.remuneration?.per_date ?? {}),
+                              options: next,
+                            },
+                          },
+                        }));
+                      }}
+                    >
+                      Ajouter une option
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 md:grid-cols-[200px_auto] items-center">
+                    <input
+                      className="border rounded-lg px-3 py-2"
+                      placeholder="Montant par date"
+                      value={formatCentsInput(conditionsDraft.remuneration?.per_date?.amount_cents)}
+                      onChange={(e) => {
+                        const cents = parseCents(e.target.value);
+                        setConditionsDraft((prev) => ({
+                          ...prev,
+                          remuneration: {
+                            ...(prev.remuneration ?? {}),
+                            mode: 'PER_DATE',
+                            per_date: {
+                              ...(prev.remuneration?.per_date ?? {}),
+                              amount_cents: cents,
+                              artist_choice: false,
+                              options: [],
+                            },
+                          },
+                        }));
+                      }}
+                    />
+                    <span className="text-xs text-slate-500">
+                      Cachet propose pour chaque date.
+                    </span>
+                  </div>
+                )}
+                {conditionsErrors.remuneration ? (
+                  <div className="text-xs text-rose-600">{conditionsErrors.remuneration}</div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="text-sm font-medium">Semaine calme</div>
+                  <input
+                    className="border rounded-lg px-3 py-2 text-sm"
+                    placeholder="Nb prestations"
+                    value={conditionsDraft.remuneration?.per_week?.calm?.performances_count ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const value = raw ? Number(raw) : undefined;
+                      setConditionsDraft((prev) => ({
+                        ...prev,
+                        remuneration: {
+                          ...(prev.remuneration ?? {}),
+                          mode: 'PER_WEEK',
+                          per_week: {
+                            ...(prev.remuneration?.per_week ?? {}),
+                            calm: {
+                              ...(prev.remuneration?.per_week?.calm ?? {}),
+                              performances_count: Number.isFinite(value ?? NaN) ? value : undefined,
+                            },
+                          },
+                        },
+                      }));
+                    }}
+                  />
+                  <input
+                    className="border rounded-lg px-3 py-2 text-sm"
+                    placeholder="Cachet"
+                    value={formatCentsInput(conditionsDraft.remuneration?.per_week?.calm?.fee_cents)}
+                    onChange={(e) => {
+                      const cents = parseCents(e.target.value);
+                      setConditionsDraft((prev) => ({
+                        ...prev,
+                        remuneration: {
+                          ...(prev.remuneration ?? {}),
+                          mode: 'PER_WEEK',
+                          per_week: {
+                            ...(prev.remuneration?.per_week ?? {}),
+                            calm: {
+                              ...(prev.remuneration?.per_week?.calm ?? {}),
+                              fee_cents: cents,
+                            },
+                          },
+                        },
+                      }));
+                    }}
+                  />
+                </div>
+                <div className="rounded-lg border p-3 space-y-2">
+                  <div className="text-sm font-medium">Semaine forte</div>
+                  <input
+                    className="border rounded-lg px-3 py-2 text-sm"
+                    placeholder="Nb prestations"
+                    value={conditionsDraft.remuneration?.per_week?.peak?.performances_count ?? ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const value = raw ? Number(raw) : undefined;
+                      setConditionsDraft((prev) => ({
+                        ...prev,
+                        remuneration: {
+                          ...(prev.remuneration ?? {}),
+                          mode: 'PER_WEEK',
+                          per_week: {
+                            ...(prev.remuneration?.per_week ?? {}),
+                            peak: {
+                              ...(prev.remuneration?.per_week?.peak ?? {}),
+                              performances_count: Number.isFinite(value ?? NaN) ? value : undefined,
+                            },
+                          },
+                        },
+                      }));
+                    }}
+                  />
+                  <input
+                    className="border rounded-lg px-3 py-2 text-sm"
+                    placeholder="Cachet"
+                    value={formatCentsInput(conditionsDraft.remuneration?.per_week?.peak?.fee_cents)}
+                    onChange={(e) => {
+                      const cents = parseCents(e.target.value);
+                      setConditionsDraft((prev) => ({
+                        ...prev,
+                        remuneration: {
+                          ...(prev.remuneration ?? {}),
+                          mode: 'PER_WEEK',
+                          per_week: {
+                            ...(prev.remuneration?.per_week ?? {}),
+                            peak: {
+                              ...(prev.remuneration?.per_week?.peak ?? {}),
+                              fee_cents: cents,
+                            },
+                          },
+                        },
+                      }));
+                    }}
+                  />
+                </div>
+                {conditionsErrors.remuneration ? (
+                  <div className="text-xs text-rose-600 md:col-span-2">{conditionsErrors.remuneration}</div>
+                ) : null}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Logement</h2>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={conditionsDraft.lodging?.included ?? false}
+                  onChange={(e) =>
+                    setConditionsDraft((prev) => ({
+                      ...prev,
+                      lodging: { ...(prev.lodging ?? {}), included: e.target.checked },
+                    }))
+                  }
+                />
+                Logement inclus
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={conditionsDraft.lodging?.companion_included ?? false}
+                  onChange={(e) =>
+                    setConditionsDraft((prev) => ({
+                      ...prev,
+                      lodging: { ...(prev.lodging ?? {}), companion_included: e.target.checked },
+                    }))
+                  }
+                />
+                Accompagnant inclus
+              </label>
+            </div>
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="Details logement"
+              value={conditionsDraft.lodging?.details ?? ''}
+              onChange={(e) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  lodging: { ...(prev.lodging ?? {}), details: e.target.value },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Repas</h2>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={conditionsDraft.meals?.included ?? false}
+                onChange={(e) =>
+                  setConditionsDraft((prev) => ({
+                    ...prev,
+                    meals: { ...(prev.meals ?? {}), included: e.target.checked },
+                  }))
+                }
+              />
+              Repas inclus
+            </label>
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="Details repas"
+              value={conditionsDraft.meals?.details ?? ''}
+              onChange={(e) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  meals: { ...(prev.meals ?? {}), details: e.target.value },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Defraiement</h2>
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="Transports, per diem, remboursement..."
+              value={conditionsDraft.defraiement?.details ?? ''}
+              onChange={(e) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  defraiement: { details: e.target.value },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <EntryListEditor
+              title="Lieux"
+              items={conditionsDraft.locations?.items ?? []}
+              emptyLabel="Aucun lieu renseigne."
+              onChange={(items) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  locations: { items },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <EntryListEditor
+              title="Contacts"
+              items={conditionsDraft.contacts?.items ?? []}
+              emptyLabel="Aucun contact renseigne."
+              onChange={(items) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  contacts: { items },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <EntryListEditor
+              title="Acces"
+              items={conditionsDraft.access?.items ?? []}
+              emptyLabel="Aucun acces renseigne."
+              onChange={(items) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  access: { items },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <EntryListEditor
+              title="Logistique"
+              items={conditionsDraft.logistics?.items ?? []}
+              emptyLabel="Aucune logistique renseignee."
+              onChange={(items) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  logistics: { items },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <ScheduleEditor
+              items={conditionsDraft.planning?.items ?? []}
+              onChange={(items) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  planning: { items },
+                }))
+              }
+            />
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Notes generales</h2>
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="Notes visibles sur la feuille de route"
+              value={conditionsDraft.notes ?? ''}
+              onChange={(e) =>
+                setConditionsDraft((prev) => ({
+                  ...prev,
+                  notes: e.target.value,
+                }))
+              }
+            />
+          </section>
+
+          <div className="flex flex-wrap gap-2">
+            <button className="btn btn-primary" onClick={saveConditions} disabled={actionLoading}>
+              Enregistrer les conditions
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {activeTab === 'roadmap' ? (
+        <div className="space-y-6">
+          <section className="rounded-xl border p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="font-semibold">Preview artiste</h2>
+                <p className="text-sm text-slate-600">
+                  Generee automatiquement depuis les conditions.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {roadmapPdfHref ? (
+                  <a className="btn btn-primary" href={roadmapPdfHref} target="_blank" rel="noreferrer">
+                    Exporter PDF
+                  </a>
+                ) : null}
+              </div>
+            </div>
+
+            {residency.mode === 'DATES' ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Date</label>
+                <select
+                  className="border rounded-lg px-3 py-2 w-full"
+                  value={roadmapSelection?.kind === 'date' ? roadmapSelection.date : ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setRoadmapSelection(value ? { kind: 'date', date: value } : null);
+                  }}
+                >
+                  <option value="">Selectionner une date</option>
+                  {occurrences.map((occ) => (
+                    <option key={occ.id} value={occ.date}>
+                      {fmtDateFR(occ.date)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Semaine</label>
+                <select
+                  className="border rounded-lg px-3 py-2 w-full"
+                  value={roadmapSelection?.kind === 'week' ? roadmapSelection.week.id : ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    const week = weeks.find((w) => w.id === value) ?? null;
+                    setRoadmapSelection(week ? { kind: 'week', week } : null);
+                  }}
+                >
+                  <option value="">Selectionner une semaine</option>
+                  {weeks.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {fmtDateFR(w.start_date_sun)} → {fmtDateFR(w.end_date_sun)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {currentRoadmapData ? <RoadmapPreview data={currentRoadmapData} /> : null}
+          </section>
+
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Notes admin (override)</h2>
+            <textarea
+              className="border rounded-lg px-3 py-2 text-sm"
+              placeholder="Notes prioritaires pour l'artiste"
+              value={roadmapOverrides.notes ?? ''}
+              onChange={(e) =>
+                setRoadmapOverrides((prev) => ({
+                  ...prev,
+                  notes: e.target.value,
+                }))
+              }
+            />
+            <div className="flex gap-2">
+              <button className="btn btn-primary" onClick={saveRoadmapOverrides} disabled={actionLoading}>
+                Enregistrer les notes
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {activeTab === 'settings' ? (
+        <div className="space-y-6">
+          <section className="rounded-xl border p-4 space-y-3">
+            <h2 className="font-semibold">Parametres de la residence</h2>
+            <div className="grid gap-3 md:grid-cols-2">
+              <input
+                className="border rounded-lg px-3 py-2"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+              <div className="flex flex-wrap gap-4 text-sm items-center">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editIsPublic}
+                    onChange={(e) => setEditIsPublic(e.target.checked)}
+                  />
+                  Publier la programmation
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={editIsOpen}
+                    onChange={(e) => setEditIsOpen(e.target.checked)}
+                  />
+                  Ouvrir aux candidatures
+                </label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Type de programmation</label>
+              <select
+                className="border rounded-lg px-3 py-2 w-full"
+                value={editProgramType}
+                onChange={(e) => setEditProgramType(e.target.value as ProgramType)}
+              >
+                <option value="WEEKLY_RESIDENCY">Residences hebdo (L2A)</option>
+                <option value="MULTI_DATES">Multi dates (DPF)</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn btn-primary" onClick={saveSettings} disabled={actionLoading}>
+                Enregistrer
+              </button>
+              <button className="btn" onClick={deleteResidency} disabled={actionLoading}>
+                Supprimer la residence
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {showAddressModal ? (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
@@ -2120,125 +2356,16 @@ export default function AdminResidencyDetailPage({
   );
 }
 
-function RoadmapEditorCard({
-  weekType,
-  template,
-  onCreate,
-  onSave,
-  onUpdateTitle,
-  onUpdateContent,
-  loading,
-  createLabel,
-}: {
-  weekType: 'calm' | 'strong';
-  template: RoadmapTemplate | null;
-  onCreate: () => void;
-  onSave: () => void;
-  onUpdateTitle: (title: string) => void;
-  onUpdateContent: (updater: (content: RoadmapContent) => RoadmapContent) => void;
-  loading: boolean;
-  createLabel: string;
-}) {
-  const label = weekType === 'strong' ? 'Semaine forte' : 'Semaine calme';
-
-  if (!template) {
-    return (
-      <div className="rounded-xl border p-4 space-y-2 bg-white">
-        <div className="font-semibold">{label}</div>
-        <p className="text-sm text-slate-600">
-          Aucune feuille de route pour cette semaine.
-        </p>
-        <button className="btn btn-primary" onClick={onCreate}>
-          {createLabel}
-        </button>
-      </div>
-    );
-  }
-
-  const content = template.content ?? emptyRoadmapContent();
-
-  return (
-    <div className="rounded-xl border p-4 space-y-3 bg-white">
-      <div className="flex items-center justify-between gap-3">
-        <div className="font-semibold">{label}</div>
-        <button className="btn btn-primary" onClick={onSave} disabled={loading}>
-          Enregistrer
-        </button>
-      </div>
-      <input
-        className="border rounded-lg px-3 py-2 text-sm"
-        placeholder="Titre"
-        value={template.title}
-        onChange={(e) => onUpdateTitle(e.target.value)}
-      />
-      <textarea
-        className="border rounded-lg px-3 py-2 text-sm"
-        placeholder="Introduction"
-        value={content.intro ?? ''}
-        onChange={(e) =>
-          onUpdateContent((prev) => ({
-            ...prev,
-            intro: e.target.value,
-          }))
-        }
-      />
-      <EntryListEditor
-        title="Contacts"
-        items={content.contacts ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, contacts: items }))}
-      />
-      <EntryListEditor
-        title="Adresses"
-        items={content.addresses ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, addresses: items }))}
-      />
-      <EntryListEditor
-        title="Accès"
-        items={content.access ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, access: items }))}
-      />
-      <EntryListEditor
-        title="Logement"
-        items={content.lodging ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, lodging: items }))}
-      />
-      <EntryListEditor
-        title="Repas"
-        items={content.meals ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, meals: items }))}
-      />
-      <ScheduleEditor
-        items={content.schedule ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, schedule: items }))}
-      />
-      <EntryListEditor
-        title="Logistique"
-        items={content.logistics ?? []}
-        onChange={(items) => onUpdateContent((prev) => ({ ...prev, logistics: items }))}
-      />
-      <textarea
-        className="border rounded-lg px-3 py-2 text-sm"
-        placeholder="Notes"
-        value={content.notes ?? ''}
-        onChange={(e) =>
-          onUpdateContent((prev) => ({
-            ...prev,
-            notes: e.target.value,
-          }))
-        }
-      />
-    </div>
-  );
-}
-
 function EntryListEditor({
   title,
   items,
   onChange,
+  emptyLabel,
 }: {
   title: string;
   items: RoadmapEntry[];
   onChange: (items: RoadmapEntry[]) => void;
+  emptyLabel: string;
 }) {
   const update = (idx: number, key: 'label' | 'value', value: string) => {
     const next = items.map((it, i) => (i === idx ? { ...it, [key]: value } : it));
@@ -2256,14 +2383,14 @@ function EntryListEditor({
         </button>
       </div>
       {items.length === 0 ? (
-        <div className="text-xs text-slate-500">Aucune information.</div>
+        <div className="text-xs text-slate-500">{emptyLabel}</div>
       ) : (
         <div className="space-y-2">
           {items.map((it, idx) => (
             <div key={`${title}-${idx}`} className="grid gap-2 md:grid-cols-[1fr_2fr_auto]">
               <input
                 className="border rounded-lg px-3 py-2 text-sm"
-                placeholder="Libellé"
+                placeholder="Libelle"
                 value={it.label}
                 onChange={(e) => update(idx, 'label', e.target.value)}
               />
