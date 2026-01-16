@@ -41,7 +41,7 @@ async function createProgrammingAction(
       title,
       client_id,
       program_type,
-      status: 'DRAFT',
+      status: 'draft',
       conditions_json: {},
     })
     .select('id, title')

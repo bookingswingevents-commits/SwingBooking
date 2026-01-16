@@ -7,7 +7,7 @@ export type ProgrammingProgram = {
   conditions_json: any;
   is_public?: boolean;
   is_open?: boolean;
-  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  status?: 'draft' | 'published' | 'archived';
 };
 
 export type ProgrammingItem = {

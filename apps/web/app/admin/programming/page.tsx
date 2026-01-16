@@ -77,7 +77,7 @@ export default async function AdminProgrammingPage() {
                   </div>
                 </div>
                 <span className="text-xs uppercase tracking-wide text-slate-500">
-                  {program.status ?? 'DRAFT'}
+                  {(program.status ?? 'draft').toUpperCase()}
                 </span>
               </Link>
             );

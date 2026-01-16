@@ -66,7 +66,7 @@ export default async function AdminProgrammingDetailPage({
 
       <section className="rounded-xl border p-4 space-y-2">
         <div className="text-sm font-medium">Statut</div>
-        <div className="text-sm text-slate-600">{program.status ?? 'DRAFT'}</div>
+        <div className="text-sm text-slate-600">{(program.status ?? 'draft').toUpperCase()}</div>
       </section>
 
       <section className="rounded-xl border p-4 space-y-2">
