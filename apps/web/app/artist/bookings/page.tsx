@@ -1,12 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
-import { fetchPublishedPrograms } from '@/lib/programming/queries';
-import ItemRow from '@/components/programming/ItemRow';
+import { fetchArtistBookings } from '@/lib/programming/queries';
 
 export const dynamic = 'force-dynamic';
 
-async function ensureArtist() {
+async function getArtistId() {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -28,18 +27,18 @@ async function ensureArtist() {
   return byId?.id ?? null;
 }
 
-export default async function ArtistProgrammingPage() {
+export default async function ArtistBookingsPage() {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  const artistId = await ensureArtist();
+  const artistId = await getArtistId();
   if (!artistId) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Programmations</h1>
+        <h1 className="text-2xl font-bold">Bookings</h1>
         <p className="text-red-600">Compte artiste non lie.</p>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -48,35 +47,47 @@ export default async function ArtistProgrammingPage() {
     );
   }
 
-  const programs = await fetchPublishedPrograms(supabase);
+  const bookings = await fetchArtistBookings(supabase, artistId);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Programmations</h1>
-          <p className="text-sm text-slate-600">Choisissez une programmation ouverte.</p>
+          <h1 className="text-2xl font-bold">Bookings</h1>
+          <p className="text-sm text-slate-600">Vos confirmations V2.</p>
         </div>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
       </header>
 
-      {programs.length === 0 ? (
+      {bookings.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucune programmation ouverte pour le moment.
+          Aucun booking confirme pour le moment.
         </div>
       ) : (
         <div className="rounded-xl border divide-y">
-          {programs.map((program) => (
-            <Link key={program.id} href={`/artist/programming/${program.id}`}>
-              <ItemRow
-                title={program.name}
-                subtitle={program.program_type}
-                status={program.status ?? 'PUBLISHED'}
-              />
-            </Link>
-          ))}
+          {bookings.map((booking) => {
+            const item = Array.isArray(booking.programming_items)
+              ? booking.programming_items[0]
+              : booking.programming_items;
+            const program = Array.isArray(item?.programming_programs)
+              ? item?.programming_programs[0]
+              : item?.programming_programs;
+            return (
+              <div key={booking.id} className="flex items-center justify-between p-4 text-sm">
+                <div>
+                  <div className="font-semibold">{program?.name ?? 'Programme'}</div>
+                  <div className="text-xs text-slate-500">
+                    {item?.start_date ?? 'Date'} → {item?.end_date ?? ''}
+                  </div>
+                </div>
+                <Link href={`/artist/bookings/${booking.id}`} className="btn">
+                  Feuille de route
+                </Link>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
