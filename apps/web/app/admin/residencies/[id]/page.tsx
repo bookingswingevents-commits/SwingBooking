@@ -957,7 +957,7 @@ export default function AdminResidencyDetailPage({
         .delete()
         .eq('id', residency.id);
       if (delErr) throw delErr;
-      router.push('/admin/programmations');
+      router.push('/admin/programming');
     } catch (e: any) {
       setError(e?.message ?? 'Erreur lors de la suppression');
     } finally {
@@ -1062,7 +1062,7 @@ export default function AdminResidencyDetailPage({
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Agenda programmation</h1>
         <p className="text-red-600">{labelForError(error)}</p>
-        <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
       </div>
@@ -1073,7 +1073,7 @@ export default function AdminResidencyDetailPage({
     return (
       <div className="space-y-3">
         <p className="text-slate-500">Programmation introuvable.</p>
-        <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
       </div>
@@ -1139,7 +1139,7 @@ export default function AdminResidencyDetailPage({
   return (
     <div className="max-w-6xl mx-auto space-y-8">
       <header className="space-y-2">
-        <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
         <h1 className="text-2xl font-bold">{residency.name}</h1>

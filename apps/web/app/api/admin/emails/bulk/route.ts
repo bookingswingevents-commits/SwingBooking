@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const template = bulkProgrammationOuverte({
       subject,
       message,
-      ctaUrl: `${appUrl}/artist/programmations`,
+      ctaUrl: `${appUrl}/artist/programming`,
       footer: process.env.EMAIL_REPLY_TO || null,
     });
 

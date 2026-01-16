@@ -1,1 +1,5 @@
-export { default } from '../../residencies/[id]/page';
+import { redirect } from 'next/navigation';
+
+export default function AdminProgrammationRedirectPage() {
+  redirect('/admin/programming');
+}

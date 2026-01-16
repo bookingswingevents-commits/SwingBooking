@@ -418,7 +418,7 @@ export default function DashboardPage() {
                 mode: res?.mode ?? 'DATES',
                 statusLabel: 'Confirmé',
                 clientName: pickClientName(res),
-                href: `/artist/programmations/${res.id}`,
+                href: `/artist/programming/${res.id}`,
                 periodLabel: '',
               };
               residencyId = res.id;
@@ -448,7 +448,7 @@ export default function DashboardPage() {
                   mode: res?.mode ?? 'DATES',
                   statusLabel: 'En attente',
                   clientName: pickClientName(res),
-                  href: `/artist/programmations/${res.id}`,
+                  href: `/artist/programming/${res.id}`,
                   periodLabel: '',
                 };
                 residencyId = res.id;
@@ -506,7 +506,7 @@ export default function DashboardPage() {
                 mode: res?.mode ?? 'DATES',
                 statusLabel: 'Aucune action',
                 clientName: pickClientName(res),
-                href: `/artist/programmations/${res.id}`,
+                href: `/artist/programming/${res.id}`,
                 periodLabel: '',
               };
               residencyId = res.id;
@@ -761,7 +761,7 @@ export default function DashboardPage() {
           subtitle: Array.isArray(row.residencies?.clients)
             ? row.residencies?.clients?.[0]?.name ?? ''
             : row.residencies?.clients?.name ?? '',
-          href: row.residencies?.id ? `/admin/programmations/${row.residencies.id}` : '/admin/programmations',
+          href: row.residencies?.id ? `/admin/programming/${row.residencies.id}` : '/admin/programming',
           kind: 'residency' as const,
         }));
         const { data: upcomingWeeks } = await supabase
@@ -779,7 +779,7 @@ export default function DashboardPage() {
           subtitle: Array.isArray(row.residencies?.clients)
             ? row.residencies?.clients?.[0]?.name ?? ''
             : row.residencies?.clients?.name ?? '',
-          href: row.residencies?.id ? `/admin/programmations/${row.residencies.id}` : '/admin/programmations',
+          href: row.residencies?.id ? `/admin/programming/${row.residencies.id}` : '/admin/programming',
           kind: 'residency' as const,
         }));
         const upcoming = [...upcomingFromResidencies, ...upcomingFromWeeks]
@@ -997,7 +997,7 @@ export default function DashboardPage() {
               items={[
                 { href: '/artist/calendar', label: 'Agenda' },
                 { href: '/artist/roadmaps', label: 'Feuilles de route' },
-                { href: '/artist/programmations', label: 'Programmations' },
+                { href: '/artist/programming', label: 'Programmations' },
               ]}
             />
           </section>
@@ -1094,7 +1094,7 @@ export default function DashboardPage() {
           <section className="rounded-2xl border bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Mes prestations à venir</h3>
-              <Link href="/artist/programmations" className="btn">
+              <Link href="/artist/programming" className="btn">
                 Programmations
               </Link>
             </div>
@@ -1137,7 +1137,7 @@ export default function DashboardPage() {
             ) : (
               <div className="text-sm text-slate-600">
                 Aucune prestation confirmée à venir.{' '}
-                <Link href="/artist/programmations" className="underline text-[var(--brand)]">
+                <Link href="/artist/programming" className="underline text-[var(--brand)]">
                   Consulte les programmations ouvertes
                 </Link>
                 .
@@ -1190,7 +1190,7 @@ export default function DashboardPage() {
                     Demande ponctuelle
                   </Link>
                   <Link
-                    href="/admin/programmations"
+                    href="/admin/programming"
                     className="block px-3 py-2 text-sm hover:bg-slate-50"
                     onClick={() => setShowCreateMenu(false)}
                   >
@@ -1210,7 +1210,7 @@ export default function DashboardPage() {
               <div className="text-sm text-slate-500">Propositions en attente</div>
               <div className="text-3xl font-semibold">{adminKpis.proposalsPending}</div>
             </Link>
-            <Link href="/admin/programmations" className="rounded-2xl border bg-white p-4 block">
+            <Link href="/admin/programming" className="rounded-2xl border bg-white p-4 block">
               <div className="text-sm text-slate-500">Semaines à remplir</div>
               <div className="text-3xl font-semibold">{adminKpis.weeksToFill}</div>
             </Link>
@@ -1252,7 +1252,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <Link
-                        href={res?.id ? `/admin/programmations/${res.id}` : '/admin/programmations'}
+                        href={res?.id ? `/admin/programming/${res.id}` : '/admin/programming'}
                         className="btn"
                       >
                         Voir
@@ -1295,7 +1295,7 @@ export default function DashboardPage() {
           <section className="rounded-2xl border bg-white p-5 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">Programmations actives</h3>
-              <Link href="/admin/programmations" className="text-sm underline text-[var(--brand)]">
+              <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
                 Voir tout
               </Link>
             </div>
@@ -1318,7 +1318,7 @@ export default function DashboardPage() {
                         </div>
                       ) : null}
                     </div>
-                    <Link href={`/admin/programmations/${res.id}`} className="btn">
+                    <Link href={`/admin/programming/${res.id}`} className="btn">
                       Ouvrir
                     </Link>
                   </li>
@@ -1800,7 +1800,7 @@ function AdminHeaderStats({
             <Link href="/admin/requests/new" className="block px-3 py-2 rounded-lg hover:bg-slate-50">
               Demande ponctuelle
             </Link>
-            <Link href="/admin/programmations" className="block px-3 py-2 rounded-lg hover:bg-slate-50">
+            <Link href="/admin/programming" className="block px-3 py-2 rounded-lg hover:bg-slate-50">
               Programmation / Résidence
             </Link>
           </div>
@@ -1808,7 +1808,7 @@ function AdminHeaderStats({
         <Link href="/admin/requests" className="btn">
           Voir toutes les demandes
         </Link>
-        <Link href="/admin/programmations" className="btn">
+        <Link href="/admin/programming" className="btn">
           Programmations
         </Link>
         <Link href="/admin/calendar" className="btn">

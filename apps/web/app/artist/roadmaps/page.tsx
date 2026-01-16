@@ -178,7 +178,7 @@ export default function ArtistRoadmapsPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Link
-                      href={`/artist/roadmaps/residencies/${r.week_id}`}
+                      href="/artist/bookings"
                       className="btn btn-primary"
                     >
                       Voir la feuille de route

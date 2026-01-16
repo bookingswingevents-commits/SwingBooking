@@ -51,7 +51,7 @@ export default function NavBar() {
               </span>
               {profile?.role === 'admin' ? (
                 <Link
-                  href="/admin/programmations"
+                  href="/admin/programming"
                   className="px-3 py-1 rounded-lg border hover:bg-slate-50 text-sm"
                 >
                   📅 Programmations
@@ -59,7 +59,7 @@ export default function NavBar() {
               ) : null}
               {profile?.role === 'artist' ? (
                 <Link
-                  href="/artist/programmations"
+                  href="/artist/programming"
                   className="px-3 py-1 rounded-lg border hover:bg-slate-50 text-sm"
                 >
                   📅 Programmations

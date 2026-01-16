@@ -447,7 +447,7 @@ export default function AdminResidenciesPage() {
                     Carte indisponible
                   </div>
                 )}
-                <Link href={`/admin/programmations/${r.id}`} className="btn btn-primary">
+                <Link href={`/admin/programming/${r.id}`} className="btn btn-primary">
                   Ouvrir l'agenda
                 </Link>
               </div>

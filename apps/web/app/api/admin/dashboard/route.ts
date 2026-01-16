@@ -130,7 +130,7 @@ export async function GET() {
       actions.push({
         title: 'Candidatures artistes en attente',
         description: 'Valider ou refuser les candidatures reçues.',
-        href: '/admin/programmations',
+        href: '/admin/programming',
         count: pendingAppsRows?.length ?? 0,
       });
     }
@@ -151,7 +151,7 @@ export async function GET() {
       actions.push({
         title: 'Programmations ouvertes sans artiste confirmé',
         description: 'Des dates futures sont encore sans confirmation.',
-        href: '/admin/programmations',
+        href: '/admin/programming',
         count: residenciesWithoutConfirmed.length,
       });
     }

@@ -167,7 +167,7 @@ export async function POST(req: Request) {
     const clientEmail = Array.isArray(resRow.clients)
       ? resRow.clients[0]?.contact_email
       : (resRow.clients as any)?.contact_email;
-    const adminUrl = `${appUrl}/admin/programmations/${residency_id}`;
+    const adminUrl = `${appUrl}/admin/programming/${residency_id}`;
 
     if (adminEmail) {
       await notifyArtistAppliedAdmin({

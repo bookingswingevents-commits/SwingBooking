@@ -90,7 +90,7 @@ export async function PATCH(req: Request, context: any) {
             artistName: artistRow?.stage_name ?? null,
             title: residencyRow.name,
             date: data.date,
-            ctaUrl: `${appUrl}/artist/programmations/${data.residency_id}`,
+            ctaUrl: `${appUrl}/artist/programming/${data.residency_id}`,
             eventKey: `residency_declined:${data.id}`,
             entityId: data.id,
           });

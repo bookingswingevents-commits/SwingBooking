@@ -109,7 +109,7 @@ export default function ArtistCalendarPage() {
         title: `${r.residency_name || 'Résidence'}${r.client_name ? ` • ${r.client_name}` : ''}`,
         start: `${r.start_date_sun}T00:00`,
         end: `${r.end_date_sun}T00:00`,
-        url: r.residency_id ? `/artist/programmations/${r.residency_id}` : undefined,
+        url: r.residency_id ? `/artist/programming/${r.residency_id}` : undefined,
         status: r.status === 'CONFIRMED' ? 'confirmed' : 'pending',
         venueName: r.client_name || '',
       });
