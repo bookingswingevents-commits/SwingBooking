@@ -4,6 +4,10 @@ import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 
 export const dynamic = 'force-dynamic';
 
+function labelProgramType(value?: string | null) {
+  return value === 'WEEKLY_RESIDENCY' ? 'Residence hebdomadaire' : 'Dates multiples';
+}
+
 export default async function AdminProgrammingDetailPage({
   params,
 }: {
@@ -16,7 +20,7 @@ export default async function AdminProgrammingDetailPage({
   if (!isAdmin) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Programme V2</h1>
+        <h1 className="text-2xl font-bold">Programmation</h1>
         <p className="text-red-600">Acces refuse (admin requis).</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -34,8 +38,8 @@ export default async function AdminProgrammingDetailPage({
   if (error || !program) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Programme V2</h1>
-        <p className="text-slate-500">Programme introuvable.</p>
+        <h1 className="text-2xl font-bold">Programmation</h1>
+        <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -56,7 +60,7 @@ export default async function AdminProgrammingDetailPage({
         </Link>
         <h1 className="text-2xl font-bold">{displayTitle}</h1>
         <p className="text-sm text-slate-600">
-          {clientName || 'Client'} • {program.program_type}
+          {clientName || 'Client'} • {labelProgramType(program.program_type)}
         </p>
       </header>
 

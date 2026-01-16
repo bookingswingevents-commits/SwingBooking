@@ -43,7 +43,7 @@ async function confirmBooking(programId: string, formData: FormData) {
     .eq('id', programId)
     .maybeSingle();
   if (!program) {
-    redirect(`/admin/programming/${programId}/applications?error=Programme%20introuvable`);
+    redirect(`/admin/programming/${programId}/applications?error=Programmation%20introuvable`);
   }
 
   const { data: item } = await supabase
@@ -140,7 +140,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Candidatures</h1>
-        <p className="text-slate-500">Programme introuvable.</p>
+        <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -204,7 +204,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
 
       {(items ?? []).length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucun item pour ce programme.
+          Aucun item pour cette programmation.
         </div>
       ) : (
         <div className="space-y-4">

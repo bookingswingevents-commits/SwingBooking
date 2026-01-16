@@ -61,6 +61,10 @@ function overlap(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+function labelProgramType(value?: string | null) {
+  return value === 'WEEKLY_RESIDENCY' ? 'Residence hebdomadaire' : 'Dates multiples';
+}
+
 async function loadItems(programId: string) {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
@@ -88,7 +92,7 @@ async function addDateAction(formData: FormData) {
     .eq('id', programId)
     .maybeSingle();
   if (program?.program_type !== 'MULTI_DATES') {
-    redirect(`/admin/programming/${programId}/calendar?error=Type%20de%20programme%20invalide`);
+    redirect(`/admin/programming/${programId}/calendar?error=Type%20de%20programmation%20invalide`);
   }
 
   const items = await loadItems(programId);
@@ -140,7 +144,7 @@ async function generateWeeksAction(formData: FormData) {
     .eq('id', programId)
     .maybeSingle();
   if (program?.program_type !== 'WEEKLY_RESIDENCY') {
-    redirect(`/admin/programming/${programId}/calendar?error=Type%20de%20programme%20invalide`);
+    redirect(`/admin/programming/${programId}/calendar?error=Type%20de%20programmation%20invalide`);
   }
 
   const start = toSunday(parseDateUTC(startDate));
@@ -274,7 +278,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Calendrier</h1>
-        <p className="text-slate-500">Programme introuvable.</p>
+        <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -299,7 +303,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
         </Link>
         <h1 className="text-2xl font-bold">Calendrier</h1>
         <p className="text-sm text-slate-600">
-          {program.title ?? (program as any).name ?? 'Programmation'} • {program.program_type}
+          {program.title ?? (program as any).name ?? 'Programmation'} • {labelProgramType(program.program_type)}
         </p>
       </header>
 

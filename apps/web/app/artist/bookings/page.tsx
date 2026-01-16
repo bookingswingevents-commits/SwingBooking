@@ -54,7 +54,7 @@ export default async function ArtistBookingsPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Bookings</h1>
-          <p className="text-sm text-slate-600">Vos confirmations V2.</p>
+          <p className="text-sm text-slate-600">Vos confirmations.</p>
         </div>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
           ← Retour

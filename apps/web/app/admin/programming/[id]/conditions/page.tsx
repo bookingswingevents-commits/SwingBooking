@@ -74,7 +74,7 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Conditions</h1>
-        <p className="text-slate-500">Programme introuvable.</p>
+        <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>

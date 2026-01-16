@@ -54,7 +54,7 @@ export default async function ArtistApplicationsPage() {
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Candidatures</h1>
-          <p className="text-sm text-slate-600">Suivi de vos candidatures V2.</p>
+          <p className="text-sm text-slate-600">Suivi de vos candidatures.</p>
         </div>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -78,7 +78,7 @@ export default async function ArtistApplicationsPage() {
                   <div className="text-xs text-slate-500">Statut: {app.status}</div>
                 </div>
                 <Link href={`/artist/programming/${item?.program_id ?? ''}`} className="btn">
-                  Voir le programme
+                  Voir la programmation
                 </Link>
               </div>
             );

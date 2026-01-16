@@ -64,7 +64,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
     .eq('id', programId)
     .maybeSingle();
   if (!program || program.status !== 'PUBLISHED') {
-    redirect(`/artist/programming/${programId}?error=Programme%20non%20publie`);
+    redirect(`/artist/programming/${programId}?error=Programmation%20non%20publiee`);
   }
 
   const { data: item } = await supabase
@@ -129,7 +129,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Programmation</h1>
-        <p className="text-slate-500">Programme introuvable.</p>
+        <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/artist/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
