@@ -23,7 +23,7 @@ export async function fetchProgram(supabase: SupabaseClient, programId: string) 
 export async function fetchProgramItems(supabase: SupabaseClient, programId: string) {
   const { data, error } = await supabase
     .from('programming_items')
-    .select('id, item_type, start_date, end_date, status, metadata_json')
+    .select('id, item_type, start_date, end_date, status, meta_json')
     .eq('program_id', programId)
     .order('start_date', { ascending: true });
   if (error) throw error;

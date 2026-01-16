@@ -166,7 +166,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     start_date: formatDateUTC(range.start),
     end_date: formatDateUTC(range.end),
     status: 'OPEN',
-    metadata_json: { week_type: 'CALM' },
+    meta_json: { week_type: 'CALM' },
   }));
 
   const { error } = await supabase.from('programming_items').insert(payload);

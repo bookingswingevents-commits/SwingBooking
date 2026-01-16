@@ -22,7 +22,7 @@ type ItemRow = {
   start_date: string;
   end_date: string;
   status: string;
-  metadata_json: Record<string, any>;
+  meta_json: Record<string, any>;
 };
 
 function parseDateUTC(dateStr: string) {
@@ -48,7 +48,7 @@ async function loadItems(programId: string) {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from('programming_items')
-    .select('id, item_type, start_date, end_date, status, metadata_json')
+    .select('id, item_type, start_date, end_date, status, meta_json')
     .eq('program_id', programId)
     .order('start_date', { ascending: true });
   return (data ?? []) as ItemRow[];
@@ -95,7 +95,7 @@ async function addDateAction(formData: FormData) {
     start_date: date,
     end_date: date,
     status: 'OPEN',
-    metadata_json: {},
+    meta_json: {},
   });
 
   if (error) {
@@ -143,15 +143,15 @@ async function updateWeekTypeAction(formData: FormData) {
 
   const { data: item } = await supabase
     .from('programming_items')
-    .select('metadata_json')
+    .select('meta_json')
     .eq('id', itemId)
     .eq('program_id', programId)
     .maybeSingle();
 
-  const metadata = { ...(item?.metadata_json ?? {}), week_type: weekType };
+  const metadata = { ...(item?.meta_json ?? {}), week_type: weekType };
   const { error } = await supabase
     .from('programming_items')
-    .update({ metadata_json: metadata })
+    .update({ meta_json: metadata })
     .eq('id', itemId)
     .eq('program_id', programId);
 
@@ -200,7 +200,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
 
   const { data: items } = await supabase
     .from('programming_items')
-    .select('id, item_type, start_date, end_date, status, metadata_json')
+    .select('id, item_type, start_date, end_date, status, meta_json')
     .eq('program_id', program.id)
     .order('start_date', { ascending: true });
   const filteredItems = (items ?? []).filter((item) =>
@@ -290,7 +290,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                       <select
                         name="week_type"
                         className="border rounded-lg px-2 py-1"
-                        defaultValue={item.metadata_json?.week_type ?? 'CALM'}
+                        defaultValue={item.meta_json?.week_type ?? 'CALM'}
                       >
                         <option value="CALM">CALM</option>
                         <option value="PEAK">PEAK</option>

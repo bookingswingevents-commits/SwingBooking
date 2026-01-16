@@ -13,7 +13,7 @@ describe('createSnapshot', () => {
         start_date: '2025-01-01',
         end_date: '2025-01-01',
         status: 'OPEN',
-        metadata_json: { week_type: 'CALM' },
+        meta_json: { week_type: 'CALM' },
       },
       application: { id: 'app', option_json: { label: 'Solo' } },
       artist: { id: 'artist', stage_name: 'Stage', email: 'a@b.com' },

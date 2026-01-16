@@ -34,7 +34,7 @@ export function createSnapshot({ program, item, application, artist }: SnapshotI
     },
     item: {
       id: item.id,
-      metadata: item.metadata_json ?? {},
+      metadata: item.meta_json ?? {},
       start_date: item.start_date,
       end_date: item.end_date,
     },

@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     let bookingQuery = supabase
       .from('programming_bookings')
-      .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, title, program_type, conditions_json))')
+      .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, meta_json, programming_programs(id, title, program_type, conditions_json))')
       .eq('id', id);
     if (!isAdmin && artistId) bookingQuery = bookingQuery.eq('artist_id', artistId);
     const { data: booking } = await bookingQuery.maybeSingle();
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         start_date: item.start_date,
         end_date: item.end_date,
         status: item.status,
-        metadata_json: item.metadata_json ?? {},
+        meta_json: item.meta_json ?? {},
       },
       booking: {
         id: booking.id,

@@ -59,7 +59,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
 
   const { data: booking } = await supabase
     .from('programming_bookings')
-    .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, title, program_type, conditions_json))')
+    .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, meta_json, programming_programs(id, title, program_type, conditions_json))')
     .eq('id', id)
     .eq('artist_id', artistId)
     .maybeSingle();
@@ -109,7 +109,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
       start_date: item.start_date,
       end_date: item.end_date,
       status: item.status,
-      metadata_json: item.metadata_json ?? {},
+      meta_json: item.meta_json ?? {},
     },
     booking: {
       id: booking.id,

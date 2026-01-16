@@ -81,7 +81,7 @@ function buildFees(
     return entries;
   }
 
-  const weekType = String(item.metadata_json?.week_type ?? '').toUpperCase();
+  const weekType = String(item.meta_json?.week_type ?? '').toUpperCase();
   const perWeek = remuneration.per_week ?? {};
   if (weekType === 'CALM' || weekType === 'PEAK') {
     const key = weekType === 'CALM' ? 'calm' : 'peak';
@@ -147,7 +147,7 @@ function buildMeals(conditions: ConditionsJson): RoadmapEntry[] {
 }
 
 function buildSchedule(program: ProgrammingProgram, item: ProgrammingItem): RoadmapScheduleEntry[] {
-  const schedule = normalizeSchedule(item.metadata_json?.schedule ?? []);
+  const schedule = normalizeSchedule(item.meta_json?.schedule ?? []);
   if (schedule.length > 0) return schedule;
 
   if (program.program_type === 'MULTI_DATES') {
@@ -165,7 +165,7 @@ function buildSchedule(program: ProgrammingProgram, item: ProgrammingItem): Road
 export function generateRoadmap(input: RoadmapInput): RoadmapOutput {
   const { program, item, booking } = input;
   const conditions = (booking?.conditions_snapshot_json ?? program.conditions_json ?? {}) as ConditionsJson;
-  const itemMeta = item.metadata_json ?? {};
+  const itemMeta = item.meta_json ?? {};
   const venues = normalizeEntries([...(conditions.venues?.items ?? []), ...(itemMeta.venues ?? [])]);
   const access = normalizeEntries([...(conditions.access?.items ?? []), ...(itemMeta.access ?? [])]);
   const logistics = normalizeEntries([

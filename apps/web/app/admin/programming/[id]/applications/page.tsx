@@ -48,7 +48,7 @@ async function confirmBooking(programId: string, formData: FormData) {
 
   const { data: item } = await supabase
     .from('programming_items')
-    .select('id, program_id, item_type, start_date, end_date, status, metadata_json')
+    .select('id, program_id, item_type, start_date, end_date, status, meta_json')
     .eq('id', itemId)
     .maybeSingle();
   if (!item) {
@@ -87,7 +87,7 @@ async function confirmBooking(programId: string, formData: FormData) {
       start_date: item.start_date,
       end_date: item.end_date,
       status: item.status,
-      metadata_json: item.metadata_json ?? {},
+      meta_json: item.meta_json ?? {},
     },
     application: { id: application.id, option_json: application.option_json ?? {} },
     artist: {

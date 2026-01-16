@@ -17,7 +17,7 @@ export type ProgrammingItem = {
   start_date: string;
   end_date: string;
   status: 'OPEN' | 'CLOSED' | 'CANCELLED';
-  metadata_json: Record<string, any>;
+  meta_json: Record<string, any>;
 };
 
 export type ProgrammingBooking = {
