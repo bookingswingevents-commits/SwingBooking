@@ -25,6 +25,7 @@ export type ProgrammingBooking = {
   artist_id: string;
   status: 'CONFIRMED' | 'CANCELLED';
   conditions_snapshot_json: Record<string, any>;
+  option_json?: Record<string, any>;
   option?: {
     label?: string;
     amount_cents?: number;
