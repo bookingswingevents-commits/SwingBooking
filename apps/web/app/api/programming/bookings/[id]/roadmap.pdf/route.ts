@@ -1,46 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabaseServer';
+import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { generateRoadmap } from '@/lib/programming/roadmap';
-import { renderSimplePdf } from '@/lib/pdf';
+import { buildRoadmapPdf } from '@/lib/programming/pdf';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function roadmapToLines(output: ReturnType<typeof generateRoadmap>): string[] {
-  const lines: string[] = [];
-  const pushSection = (title: string, entries: { label: string; value: string }[]) => {
-    if (!entries.length) return;
-    lines.push(title.toUpperCase());
-    entries.forEach((entry) => {
-      const label = entry.label ? `${entry.label}: ` : '';
-      lines.push(`- ${label}${entry.value}`.trim());
-    });
-    lines.push('');
-  };
-
-  if (output.schedule.length) {
-    lines.push('PLANNING');
-    output.schedule.forEach((entry) => {
-      const parts = [entry.date, entry.time].filter(Boolean).join(' ');
-      const place = entry.place ? ` - ${entry.place}` : '';
-      lines.push(`- ${parts}${place}`.trim());
-      if (entry.notes) lines.push(`  ${entry.notes}`);
-    });
-    lines.push('');
-  }
-
-  pushSection('Frais', output.fees);
-  pushSection('Lieux', output.venues);
-  pushSection('Logement', output.lodging);
-  pushSection('Repas', output.meals);
-  pushSection('Logistique', output.logistics);
-  pushSection('Contacts', output.contacts);
-
-  return lines.filter((line, idx, arr) => {
-    if (line !== '') return true;
-    return idx === 0 || arr[idx - 1] !== '';
-  });
-}
 
 async function getArtistId() {
   const supabase = await createSupabaseServerClient();
@@ -68,24 +32,20 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   try {
     const { id } = await params;
     const supabase = await createSupabaseServerClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 401 });
-    }
+    const { user, isAdmin } = await getAdminAuth(supabase);
+    if (!user) return NextResponse.json({ ok: false, error: 'NO_USER' }, { status: 401 });
 
-    const artistId = await getArtistId();
-    if (!artistId) {
+    const artistId = isAdmin ? null : await getArtistId();
+    if (!isAdmin && !artistId) {
       return NextResponse.json({ ok: false, error: 'NOT_ARTIST' }, { status: 403 });
     }
 
-    const { data: booking } = await supabase
+    let bookingQuery = supabase
       .from('programming_bookings')
-      .select('id, artist_id, status, option_json, conditions_snapshot_json, programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, program_type, conditions_json))')
-      .eq('id', id)
-      .eq('artist_id', artistId)
-      .maybeSingle();
+      .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, name, program_type, conditions_json))')
+      .eq('id', id);
+    if (!isAdmin && artistId) bookingQuery = bookingQuery.eq('artist_id', artistId);
+    const { data: booking } = await bookingQuery.maybeSingle();
 
     if (!booking) {
       return NextResponse.json({ ok: false, error: 'BOOKING_NOT_FOUND' }, { status: 404 });
@@ -97,6 +57,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const program = Array.isArray(item?.programming_programs)
       ? item?.programming_programs[0]
       : item?.programming_programs;
+    const artistRow = Array.isArray((booking as any)?.artists)
+      ? (booking as any).artists[0]
+      : (booking as any)?.artists;
 
     if (!item || !program) {
       return NextResponse.json({ ok: false, error: 'DATA_MISSING' }, { status: 404 });
@@ -128,8 +91,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       },
     });
 
-    const lines = roadmapToLines(roadmap);
-    const pdf = renderSimplePdf(lines);
+    const pdf = buildRoadmapPdf(
+      {
+        title: program.name ?? 'Roadmap',
+        artistName: artistRow?.stage_name ?? null,
+        period: `${item.start_date} → ${item.end_date}`,
+      },
+      roadmap
+    );
 
     return new NextResponse(pdf, {
       status: 200,

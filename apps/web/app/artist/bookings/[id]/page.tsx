@@ -134,9 +134,19 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
           period={`${item.start_date} → ${item.end_date}`}
           artistName={artistName}
         />
-        <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
-          ← Retour
-        </Link>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/api/programming/bookings/${booking.id}/roadmap.pdf`}
+            className="btn"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Telecharger PDF
+          </a>
+          <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
+            ← Retour
+          </Link>
+        </div>
       </header>
 
       <section className="rounded-2xl border bg-white p-5 space-y-4">
