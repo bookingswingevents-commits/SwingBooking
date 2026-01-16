@@ -17,10 +17,7 @@ function pushSection(lines: string[], title: string, items: { label: string; val
   lines.push('');
 }
 
-export function buildRoadmapPdf(
-  header: RoadmapPdfHeader,
-  roadmap: RoadmapOutput
-): Buffer {
+export function buildRoadmapPdf(header: RoadmapPdfHeader, roadmap: RoadmapOutput): Buffer {
   const lines: string[] = [];
   lines.push(header.title);
   if (header.artistName) lines.push(`Artiste: ${header.artistName}`);
@@ -41,6 +38,7 @@ export function buildRoadmapPdf(
   pushSection(lines, 'Frais', roadmap.fees);
   pushSection(lines, 'Logement', roadmap.lodging);
   pushSection(lines, 'Repas', roadmap.meals);
+  pushSection(lines, 'Acces', roadmap.access);
   pushSection(lines, 'Logistique', roadmap.logistics);
   pushSection(lines, 'Contacts', roadmap.contacts);
 

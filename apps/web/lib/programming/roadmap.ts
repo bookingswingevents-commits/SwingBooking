@@ -21,6 +21,7 @@ const emptyOutput: RoadmapOutput = {
   venues: [],
   lodging: [],
   meals: [],
+  access: [],
   logistics: [],
   contacts: [],
 };
@@ -166,6 +167,7 @@ export function generateRoadmap(input: RoadmapInput): RoadmapOutput {
   const conditions = (booking?.conditions_snapshot_json ?? program.conditions_json ?? {}) as ConditionsJson;
   const itemMeta = item.metadata_json ?? {};
   const venues = normalizeEntries([...(conditions.venues?.items ?? []), ...(itemMeta.venues ?? [])]);
+  const access = normalizeEntries([...(conditions.access?.items ?? []), ...(itemMeta.access ?? [])]);
   const logistics = normalizeEntries([
     ...(conditions.logistics?.items ?? []),
     ...(itemMeta.logistics ?? []),
@@ -182,6 +184,7 @@ export function generateRoadmap(input: RoadmapInput): RoadmapOutput {
     venues: venues.length > 0 ? venues : normalizeEntries(conditions.locations?.items ?? []),
     lodging: buildLodging(conditions),
     meals: buildMeals(conditions),
+    access,
     logistics,
     contacts,
   };

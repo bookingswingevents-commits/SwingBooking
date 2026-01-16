@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { generateRoadmap } from '@/lib/programming/roadmap';
-import { buildRoadmapPdf } from '@/lib/programming/pdf';
+import { buildRoadmapPdf } from '@/lib/programming/pdf/roadmapPdf';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

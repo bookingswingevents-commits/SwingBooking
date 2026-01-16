@@ -47,6 +47,7 @@ export type RoadmapOutput = {
   venues: RoadmapEntry[];
   lodging: RoadmapEntry[];
   meals: RoadmapEntry[];
+  access: RoadmapEntry[];
   logistics: RoadmapEntry[];
   contacts: RoadmapEntry[];
 };
