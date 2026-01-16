@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import WeeklyGeneratorForm from './weekly-generator-form';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +25,41 @@ type ItemRow = {
   metadata_json: Record<string, any>;
 };
 
+type GenerateWeeksState = {
+  ok: boolean;
+  error?: string;
+  details?: string;
+  createdCount?: number;
+  start_date?: string;
+  end_date?: string;
+};
+
+const initialGenerateWeeksState: GenerateWeeksState = {
+  ok: false,
+  createdCount: 0,
+  start_date: '',
+  end_date: '',
+};
+
 function parseDateUTC(dateStr: string) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1));
+}
+
+function normalizeDateInput(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function isValidIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T12:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
 function formatDateUTC(date: Date) {
@@ -126,12 +159,42 @@ async function addDateAction(formData: FormData) {
   redirect(`/admin/programming/${programId}/calendar?success=Date%20ajoutee`);
 }
 
-async function generateWeeksAction(formData: FormData) {
+async function generateWeeksAction(
+  _prevState: GenerateWeeksState,
+  formData: FormData
+): Promise<GenerateWeeksState> {
   'use server';
   const programId = String(formData.get('program_id') ?? '').trim();
-  const startDate = String(formData.get('start_date') ?? '').trim();
-  const endDate = String(formData.get('end_date') ?? '').trim();
-  if (!programId || !startDate || !endDate) return;
+  const startInput = String(formData.get('start_date') ?? '').trim();
+  const endInput = String(formData.get('end_date') ?? '').trim();
+  const baseState = {
+    ok: false,
+    createdCount: 0,
+    start_date: '',
+    end_date: '',
+  };
+  if (!programId || !startInput || !endInput) {
+    return {
+      ...baseState,
+      error: 'Dates requises.',
+      details: 'Merci de renseigner un debut et une fin.',
+    };
+  }
+  const startDate = normalizeDateInput(startInput);
+  const endDate = normalizeDateInput(endInput);
+  if (!startDate || !endDate || !isValidIsoDate(startDate) || !isValidIsoDate(endDate)) {
+    return {
+      ...baseState,
+      error: 'Dates invalides.',
+      details: 'Format attendu: YYYY-MM-DD ou DD/MM/YYYY.',
+    };
+  }
+  const normalizedState = {
+    ok: false,
+    createdCount: 0,
+    start_date: startDate,
+    end_date: endDate,
+  };
 
   const supabase = await createSupabaseServerClient();
   const { user, isAdmin } = await getAdminAuth(supabase);
@@ -144,13 +207,20 @@ async function generateWeeksAction(formData: FormData) {
     .eq('id', programId)
     .maybeSingle();
   if (program?.program_type !== 'WEEKLY_RESIDENCY') {
-    redirect(`/admin/programming/${programId}/calendar?error=Type%20de%20programmation%20invalide`);
+    return {
+      ...normalizedState,
+      error: 'Type de programmation invalide.',
+    };
   }
 
   const start = toSunday(parseDateUTC(startDate));
   const end = toNextSunday(parseDateUTC(endDate));
   if (end < start) {
-    redirect(`/admin/programming/${programId}/calendar?error=Periode%20invalide`);
+    return {
+      ...normalizedState,
+      error: 'Periode invalide.',
+      details: 'La fin doit etre apres le debut.',
+    };
   }
 
   const items = await loadItems(programId);
@@ -173,7 +243,11 @@ async function generateWeeksAction(formData: FormData) {
   );
 
   if (blocked) {
-    redirect(`/admin/programming/${programId}/calendar?error=Chevauchement%20detecte`);
+    return {
+      ...normalizedState,
+      error: 'Chevauchement detecte.',
+      details: 'Une ou plusieurs semaines existent deja sur cette periode.',
+    };
   }
 
   const payload = newItems.map((range) => ({
@@ -187,10 +261,26 @@ async function generateWeeksAction(formData: FormData) {
 
   const { error } = await supabase.from('programming_items').insert(payload);
   if (error) {
-    redirect(`/admin/programming/${programId}/calendar?error=Generation%20impossible`);
+    console.error('[programming/calendar] GENERATE_WEEKS_FAILED', {
+      programId,
+      startDate,
+      endDate,
+      error,
+    });
+    const details = error?.details || error?.hint || error?.message || 'Erreur inconnue';
+    return {
+      ...normalizedState,
+      error: 'Generation impossible.',
+      details,
+    };
   }
 
-  redirect(`/admin/programming/${programId}/calendar?success=Semaines%20generees`);
+  return {
+    ok: true,
+    createdCount: payload.length,
+    start_date: startDate,
+    end_date: endDate,
+  };
 }
 
 async function removeItemAction(formData: FormData) {
@@ -360,24 +450,11 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
       ) : (
         <section className="rounded-xl border p-4 space-y-4">
           <h2 className="font-semibold">Semaines</h2>
-          <form action={generateWeeksAction} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] items-end">
-            <input type="hidden" name="program_id" value={program.id} />
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="start_date">
-                Debut
-              </label>
-              <input id="start_date" name="start_date" type="date" className="border rounded-lg px-3 py-2 w-full" required />
-            </div>
-            <div className="space-y-1">
-              <label className="text-sm font-medium" htmlFor="end_date">
-                Fin
-              </label>
-              <input id="end_date" name="end_date" type="date" className="border rounded-lg px-3 py-2 w-full" required />
-            </div>
-            <button className="btn btn-primary" type="submit">
-              Generer les semaines
-            </button>
-          </form>
+          <WeeklyGeneratorForm
+            programId={program.id}
+            action={generateWeeksAction}
+            initialState={initialGenerateWeeksState}
+          />
 
           {filteredItems.length === 0 ? (
             <div className="text-sm text-slate-500">Aucune semaine pour le moment.</div>
