@@ -1,0 +1,75 @@
+import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+
+export const dynamic = 'force-dynamic';
+
+export default async function AdminProgrammingDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const supabase = await createSupabaseServerClient();
+  const { user, isAdmin } = await getAdminAuth(supabase);
+  if (!user) redirect('/login');
+  if (!isAdmin) {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-2xl font-bold">Programme V2</h1>
+        <p className="text-red-600">Acces refuse (admin requis).</p>
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
+          ← Retour
+        </Link>
+      </div>
+    );
+  }
+
+  const { data: program, error } = await supabase
+    .from('programming_programs')
+    .select('id, name, program_type, status, clients(name)')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error || !program) {
+    return (
+      <div className="space-y-3">
+        <h1 className="text-2xl font-bold">Programme V2</h1>
+        <p className="text-slate-500">Programme introuvable.</p>
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
+          ← Retour
+        </Link>
+      </div>
+    );
+  }
+
+  const clientName = Array.isArray(program.clients)
+    ? program.clients[0]?.name
+    : (program.clients as any)?.name;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <header className="space-y-2">
+        <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
+          ← Retour
+        </Link>
+        <h1 className="text-2xl font-bold">{program.name}</h1>
+        <p className="text-sm text-slate-600">
+          {clientName || 'Client'} • {program.program_type}
+        </p>
+      </header>
+
+      <section className="rounded-xl border p-4 space-y-2">
+        <div className="text-sm font-medium">Statut</div>
+        <div className="text-sm text-slate-600">{program.status ?? 'DRAFT'}</div>
+      </section>
+
+      <section className="rounded-xl border p-4 space-y-2">
+        <div className="text-sm font-medium">Etapes suivantes</div>
+        <div className="text-sm text-slate-600">
+          Les dates, conditions et feuilles de route seront ajoutees dans les prochaines etapes.
+        </div>
+      </section>
+    </div>
+  );
+}

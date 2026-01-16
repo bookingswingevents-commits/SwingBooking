@@ -5,6 +5,7 @@ export type ProgrammingProgram = {
   program_type: ProgramType;
   is_public?: boolean;
   is_open?: boolean;
+  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   conditions_json: Record<string, any>;
 };
 
