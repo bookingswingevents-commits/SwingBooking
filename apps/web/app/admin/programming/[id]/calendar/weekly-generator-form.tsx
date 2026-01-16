@@ -1,47 +1,92 @@
 "use client";
 
-import { useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useFormState, useFormStatus } from 'react-dom';
-
-type GenerateWeeksState = {
-  ok: boolean;
-  error?: string;
-  details?: string;
-  createdCount?: number;
-  start_date?: string;
-  end_date?: string;
-};
 
 type WeeklyGeneratorFormProps = {
   programId: string;
-  action: (prevState: GenerateWeeksState, formData: FormData) => Promise<GenerateWeeksState>;
-  initialState: GenerateWeeksState;
 };
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button className="btn btn-primary" type="submit" disabled={pending}>
-      {pending ? 'Generation...' : 'Generer les semaines'}
-    </button>
-  );
-}
+type GeneratorState = {
+  pending: boolean;
+  error?: string;
+  details?: string;
+  success?: string;
+  start_date: string;
+  end_date: string;
+};
 
-export default function WeeklyGeneratorForm({ programId, action, initialState }: WeeklyGeneratorFormProps) {
-  const [state, formAction] = useFormState(action, initialState);
+export default function WeeklyGeneratorForm({ programId }: WeeklyGeneratorFormProps) {
   const router = useRouter();
-  const refreshedRef = useRef(false);
+  const [state, setState] = useState<GeneratorState>({
+    pending: false,
+    error: undefined,
+    details: undefined,
+    success: undefined,
+    start_date: '',
+    end_date: '',
+  });
 
-  useEffect(() => {
-    if (!state.ok) {
-      refreshedRef.current = false;
-    }
-    if (state.ok && state.createdCount && !refreshedRef.current) {
-      refreshedRef.current = true;
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    const start_date = String(formData.get('start_date') ?? '').trim();
+    const end_date = String(formData.get('end_date') ?? '').trim();
+
+    setState((prev) => ({
+      ...prev,
+      pending: true,
+      error: undefined,
+      details: undefined,
+      success: undefined,
+      start_date,
+      end_date,
+    }));
+
+    try {
+      const response = await fetch(`/api/admin/programming/${programId}/generate-weeks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date, end_date }),
+      });
+      const payload = (await response.json()) as {
+        ok: boolean;
+        error?: string;
+        details?: string;
+        createdCount?: number;
+      };
+
+      if (!response.ok || !payload.ok) {
+        setState((prev) => ({
+          ...prev,
+          pending: false,
+          error: payload.error ?? 'Generation impossible.',
+          details: payload.details,
+          success: undefined,
+        }));
+        return;
+      }
+
+      const createdCount = payload.createdCount ?? 0;
+      setState((prev) => ({
+        ...prev,
+        pending: false,
+        error: undefined,
+        details: undefined,
+        success: `${createdCount} semaine${createdCount > 1 ? 's' : ''} generee${createdCount > 1 ? 's' : ''}.`,
+      }));
       router.refresh();
+    } catch (error) {
+      console.error('[programming/calendar] GENERATE_WEEKS_CLIENT_FAILED', error);
+      setState((prev) => ({
+        ...prev,
+        pending: false,
+        error: 'Generation impossible.',
+        details: 'Erreur reseau. Merci de reessayer.',
+        success: undefined,
+      }));
     }
-  }, [state.ok, state.createdCount, router]);
+  };
 
   return (
     <div className="space-y-3">
@@ -51,14 +96,12 @@ export default function WeeklyGeneratorForm({ programId, action, initialState }:
           {state.details ? <div className="text-rose-600">{state.details}</div> : null}
         </div>
       ) : null}
-      {state.ok && state.createdCount ? (
+      {state.success ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700 text-sm">
-          {state.createdCount} semaine{state.createdCount > 1 ? 's' : ''} generee
-          {state.createdCount > 1 ? 's' : ''}.
+          {state.success}
         </div>
       ) : null}
-      <form action={formAction} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] items-end">
-        <input type="hidden" name="program_id" value={programId} />
+      <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] items-end">
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="start_date">
             Debut
@@ -66,9 +109,11 @@ export default function WeeklyGeneratorForm({ programId, action, initialState }:
           <input
             id="start_date"
             name="start_date"
-            type="date"
+            type="text"
+            inputMode="numeric"
+            placeholder="YYYY-MM-DD ou DD/MM/YYYY"
             className="border rounded-lg px-3 py-2 w-full"
-            defaultValue={state.start_date ?? ''}
+            defaultValue={state.start_date}
             required
           />
         </div>
@@ -79,13 +124,17 @@ export default function WeeklyGeneratorForm({ programId, action, initialState }:
           <input
             id="end_date"
             name="end_date"
-            type="date"
+            type="text"
+            inputMode="numeric"
+            placeholder="YYYY-MM-DD ou DD/MM/YYYY"
             className="border rounded-lg px-3 py-2 w-full"
-            defaultValue={state.end_date ?? ''}
+            defaultValue={state.end_date}
             required
           />
         </div>
-        <SubmitButton />
+        <button className="btn btn-primary" type="submit" disabled={state.pending}>
+          {state.pending ? 'Generation...' : 'Generer les semaines'}
+        </button>
       </form>
     </div>
   );
