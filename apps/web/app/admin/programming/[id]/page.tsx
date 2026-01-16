@@ -27,7 +27,7 @@ export default async function AdminProgrammingDetailPage({
 
   const { data: program, error } = await supabase
     .from('programming_programs')
-    .select('id, name, program_type, status, clients(name)')
+    .select('id, title, program_type, status, clients(name)')
     .eq('id', id)
     .maybeSingle();
 
@@ -46,6 +46,7 @@ export default async function AdminProgrammingDetailPage({
   const clientName = Array.isArray(program.clients)
     ? program.clients[0]?.name
     : (program.clients as any)?.name;
+  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -53,7 +54,7 @@ export default async function AdminProgrammingDetailPage({
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
-        <h1 className="text-2xl font-bold">{program.name}</h1>
+        <h1 className="text-2xl font-bold">{displayTitle}</h1>
         <p className="text-sm text-slate-600">
           {clientName || 'Client'} • {program.program_type}
         </p>

@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 async function createProgram(formData: FormData) {
   'use server';
-  const name = String(formData.get('name') ?? '').trim();
+  const title = String(formData.get('title') ?? formData.get('name') ?? '').trim();
   const clientId = String(formData.get('client_id') ?? '').trim();
   const programType = String(formData.get('program_type') ?? '').trim();
 
-  if (!name || !clientId || !programType) {
+  if (!title || !clientId || !programType) {
     return;
   }
 
@@ -22,7 +22,7 @@ async function createProgram(formData: FormData) {
   const { data, error } = await supabase
     .from('programming_programs')
     .insert({
-      name,
+      title,
       client_id: clientId,
       program_type: programType,
       status: 'DRAFT',
@@ -72,12 +72,12 @@ export default async function AdminProgrammingNewPage() {
 
       <form action={createProgram} className="rounded-xl border p-5 space-y-4 bg-white">
         <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor="name">
+          <label className="text-sm font-medium" htmlFor="title">
             Titre du programme
           </label>
           <input
-            id="name"
-            name="name"
+            id="title"
+            name="title"
             className="border rounded-lg px-3 py-2 w-full"
             placeholder="Nom interne"
             required

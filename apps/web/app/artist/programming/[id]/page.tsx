@@ -155,6 +155,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
   (bookings ?? []).forEach((bk) => bookingMap.set(bk.item_id, bk));
 
   const feeOptions = ((program.conditions_json as any)?.fees?.options ?? []) as OptionPayload[];
+  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -162,7 +163,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
         <Link href="/artist/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
-        <h1 className="text-2xl font-bold">{program.name}</h1>
+        <h1 className="text-2xl font-bold">{displayTitle}</h1>
         <p className="text-sm text-slate-600">Items disponibles</p>
       </header>
 

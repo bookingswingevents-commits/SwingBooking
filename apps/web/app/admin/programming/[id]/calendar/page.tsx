@@ -11,7 +11,7 @@ type CalendarPageProps = {
 
 type ProgramRow = {
   id: string;
-  name: string;
+  title: string;
   program_type: 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 };
 
@@ -266,7 +266,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
 
   const { data: program, error } = await supabase
     .from('programming_programs')
-    .select('id, name, program_type')
+    .select('id, title, program_type')
     .eq('id', id)
     .maybeSingle();
 
@@ -299,7 +299,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
         </Link>
         <h1 className="text-2xl font-bold">Calendrier</h1>
         <p className="text-sm text-slate-600">
-          {program.name} • {program.program_type}
+          {program.title ?? (program as any).name ?? 'Programmation'} • {program.program_type}
         </p>
       </header>
 

@@ -42,7 +42,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     let bookingQuery = supabase
       .from('programming_bookings')
-      .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, name, program_type, conditions_json))')
+      .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, title, program_type, conditions_json))')
       .eq('id', id);
     if (!isAdmin && artistId) bookingQuery = bookingQuery.eq('artist_id', artistId);
     const { data: booking } = await bookingQuery.maybeSingle();
@@ -68,6 +68,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const roadmap = generateRoadmap({
       program: {
         id: program.id,
+        title: program.title ?? (program as any).name ?? 'Programmation',
         program_type: program.program_type,
         conditions_json: program.conditions_json ?? {},
       },
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     const pdf = buildRoadmapPdf(
       {
-        title: program.name ?? 'Roadmap',
+        title: program.title ?? (program as any).name ?? 'Roadmap',
         artistName: artistRow?.stage_name ?? null,
         period: `${item.start_date} → ${item.end_date}`,
       },

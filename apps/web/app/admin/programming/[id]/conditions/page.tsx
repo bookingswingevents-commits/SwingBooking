@@ -66,7 +66,7 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
 
   const { data: program, error } = await supabase
     .from('programming_programs')
-    .select('id, name, conditions_json')
+    .select('id, title, conditions_json')
     .eq('id', id)
     .maybeSingle();
 
@@ -83,6 +83,7 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
   }
 
   const onSave = saveConditions.bind(null, program.id);
+  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -91,7 +92,7 @@ export default async function AdminProgrammingConditionsPage({ params, searchPar
           ← Retour
         </Link>
         <h1 className="text-2xl font-bold">Conditions</h1>
-        <p className="text-sm text-slate-600">{program.name}</p>
+        <p className="text-sm text-slate-600">{displayTitle}</p>
       </header>
 
       {sp.error ? (

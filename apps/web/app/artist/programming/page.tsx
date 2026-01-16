@@ -71,7 +71,7 @@ export default async function ArtistProgrammingPage() {
           {programs.map((program) => (
             <Link key={program.id} href={`/artist/programming/${program.id}`}>
               <ItemRow
-                title={program.name}
+                title={program.title ?? (program as any).name ?? 'Programmation'}
                 subtitle={program.program_type}
                 status={program.status ?? 'PUBLISHED'}
               />

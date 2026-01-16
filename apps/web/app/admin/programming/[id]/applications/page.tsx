@@ -39,7 +39,7 @@ async function confirmBooking(programId: string, formData: FormData) {
 
   const { data: program } = await supabase
     .from('programming_programs')
-    .select('id, program_type, conditions_json')
+    .select('id, title, program_type, conditions_json')
     .eq('id', programId)
     .maybeSingle();
   if (!program) {
@@ -76,6 +76,7 @@ async function confirmBooking(programId: string, formData: FormData) {
   const snapshot = createSnapshot({
     program: {
       id: program.id,
+      title: program.title ?? (program as any).name ?? 'Programmation',
       program_type: program.program_type ?? 'MULTI_DATES',
       conditions_json: program.conditions_json ?? {},
     },
@@ -131,7 +132,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
 
   const { data: program } = await supabase
     .from('programming_programs')
-    .select('id, name')
+    .select('id, title')
     .eq('id', id)
     .maybeSingle();
 
@@ -178,6 +179,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
   (bookingsRes.data ?? []).forEach((bk) => bookingMap.set(bk.item_id, bk.artist_id));
 
   const onConfirm = confirmBooking.bind(null, program.id);
+  const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -186,7 +188,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
           ← Retour
         </Link>
         <h1 className="text-2xl font-bold">Candidatures</h1>
-        <p className="text-sm text-slate-600">{program.name}</p>
+        <p className="text-sm text-slate-600">{displayTitle}</p>
       </header>
 
       {sp.error ? (

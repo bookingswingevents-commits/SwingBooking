@@ -104,7 +104,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
   const { data: item } = await supabase
     .from('programming_items')
     .select(
-      'id, item_type, start_date, end_date, status, program_id, programming_programs(id, name)'
+      'id, item_type, start_date, end_date, status, program_id, programming_programs(id, title)'
     )
     .eq('id', itemId)
     .maybeSingle();
@@ -136,6 +136,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
   const program = Array.isArray(item.programming_programs)
     ? item.programming_programs[0]
     : item.programming_programs;
+  const displayTitle = program?.title ?? (program as any)?.name ?? 'Programmation';
   const onConfirm = confirmArtistAction.bind(null, itemId);
 
   return (
@@ -146,7 +147,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
         </Link>
         <h1 className="text-2xl font-bold">Candidatures</h1>
         <p className="text-sm text-slate-600">
-          {program?.name ?? 'Programme'} • {item.start_date} → {item.end_date}
+          {displayTitle} • {item.start_date} → {item.end_date}
         </p>
       </header>
 

@@ -22,7 +22,7 @@ export default async function AdminProgrammingPage() {
 
   const { data: programs, error } = await supabase
     .from('programming_programs')
-    .select('id, name, program_type, status, created_at, clients(name)')
+    .select('id, title, program_type, status, created_at, clients(name)')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -59,6 +59,7 @@ export default async function AdminProgrammingPage() {
             const clientName = Array.isArray(program.clients)
               ? program.clients[0]?.name
               : (program.clients as any)?.name;
+            const displayTitle = program.title ?? (program as any).name ?? 'Programmation';
             return (
               <Link
                 key={program.id}
@@ -66,7 +67,7 @@ export default async function AdminProgrammingPage() {
                 className="flex flex-wrap items-center justify-between gap-3 p-4 hover:bg-slate-50"
               >
                 <div className="space-y-1">
-                  <div className="font-semibold">{program.name}</div>
+                  <div className="font-semibold">{displayTitle}</div>
                   <div className="text-sm text-slate-600">
                     {clientName || 'Client'} • {program.program_type}
                   </div>

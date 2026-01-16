@@ -74,10 +74,11 @@ export default async function ArtistBookingsPage() {
             const program = Array.isArray(item?.programming_programs)
               ? item?.programming_programs[0]
               : item?.programming_programs;
+            const displayTitle = program?.title ?? (program as any)?.name ?? 'Programmation';
             return (
               <div key={booking.id} className="flex items-center justify-between p-4 text-sm">
                 <div>
-                  <div className="font-semibold">{program?.name ?? 'Programme'}</div>
+                  <div className="font-semibold">{displayTitle}</div>
                   <div className="text-xs text-slate-500">
                     {item?.start_date ?? 'Date'} → {item?.end_date ?? ''}
                   </div>

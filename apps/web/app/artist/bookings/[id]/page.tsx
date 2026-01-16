@@ -59,7 +59,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
 
   const { data: booking } = await supabase
     .from('programming_bookings')
-    .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, name, program_type, conditions_json))')
+    .select('id, artist_id, status, option_json, conditions_snapshot_json, artists(stage_name), programming_items(id, item_type, start_date, end_date, status, metadata_json, programming_programs(id, title, program_type, conditions_json))')
     .eq('id', id)
     .eq('artist_id', artistId)
     .maybeSingle();
@@ -98,6 +98,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
   const roadmap = generateRoadmap({
     program: {
       id: program.id,
+      title: program.title ?? (program as any).name ?? 'Programmation',
       program_type: program.program_type,
       conditions_json: program.conditions_json ?? {},
     },
@@ -130,7 +131,7 @@ export default async function ArtistBookingRoadmapPage({ params }: PageProps) {
     <div className="max-w-4xl mx-auto space-y-6">
       <header className="flex items-start justify-between gap-3">
         <RoadmapHeader
-          title={program.name}
+          title={program.title ?? (program as any).name ?? 'Programmation'}
           period={`${item.start_date} → ${item.end_date}`}
           artistName={artistName}
         />
