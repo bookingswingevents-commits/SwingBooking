@@ -4,6 +4,7 @@ import { getArtistIdentity } from '@/lib/artistIdentity';
 import { buildRoadmapData, roadmapToLines } from '@/lib/roadmap';
 import { fmtDateFR } from '@/lib/date';
 import { renderSimplePdf } from '@/lib/pdf';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,6 +20,12 @@ export async function GET(
   { params }: { params: Promise<{ bookingId: string }> }
 ) {
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const { bookingId } = await params;
     if (!bookingId) {
       return NextResponse.json({ ok: false, error: 'BOOKING_ID_REQUIRED' }, { status: 400 });

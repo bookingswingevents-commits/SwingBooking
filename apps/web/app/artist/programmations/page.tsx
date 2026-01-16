@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { getArtistIdentity } from '@/lib/artistIdentity';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type ResidencyRow = {
   id: string;
@@ -32,6 +33,10 @@ export default function ArtistProgrammationsPage() {
       try {
         setLoading(true);
         setError(null);
+        if (LEGACY_RESIDENCIES_DISABLED) {
+          setRows([]);
+          return;
+        }
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           router.push('/login');
@@ -64,6 +69,8 @@ export default function ArtistProgrammationsPage() {
   if (loading) return <div className="text-slate-500">Chargement…</div>;
   if (error) return <div className="text-red-600">{error}</div>;
 
+  const safeRows = Array.isArray(rows) ? rows : [];
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <header className="space-y-1">
@@ -77,11 +84,11 @@ export default function ArtistProgrammationsPage() {
         </div>
       ) : null}
 
-      {rows.length === 0 ? (
+      {safeRows.length === 0 ? (
         <div className="text-sm text-slate-500">Aucune programmation ouverte pour le moment.</div>
       ) : (
         <div className="space-y-3">
-          {rows.map((r) => {
+          {safeRows.map((r) => {
             const clientName = Array.isArray(r.clients)
               ? r.clients[0]?.name
               : (r.clients as any)?.name;

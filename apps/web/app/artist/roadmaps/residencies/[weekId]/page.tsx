@@ -8,6 +8,7 @@ import { fmtDateFR } from '@/lib/date';
 import { getArtistIdentity } from '@/lib/artistIdentity';
 import RoadmapPreview from '@/components/RoadmapPreview';
 import { buildRoadmapData, ConditionsJson, RoadmapOverrides } from '@/lib/roadmap';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type WeekRow = {
   id: string;
@@ -49,6 +50,10 @@ export default function ArtistResidencyRoadmapPage() {
       try {
         setLoading(true);
         setError('');
+        if (LEGACY_RESIDENCIES_DISABLED) {
+          setError('Module de programmation indisponible.');
+          return;
+        }
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           router.push('/login');

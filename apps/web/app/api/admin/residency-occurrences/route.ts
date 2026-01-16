@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,6 +15,12 @@ function env(name: string) {
 
 export async function DELETE(req: Request) {
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
     if (!user) {
@@ -49,6 +56,12 @@ export async function DELETE(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
     if (!user) {

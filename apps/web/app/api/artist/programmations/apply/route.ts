@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
 import { notifyArtistAppliedAdmin } from '@/lib/notify';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,6 +17,12 @@ function isValidIsoDate(value: string) {
 export async function POST(req: Request) {
   const debug: Record<string, any> = { step: 'start' };
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const supabase = await createSupabaseServerClient();
     const { data: { user }, error: userErr } = await supabase.auth.getUser();
     debug.step = 'auth';

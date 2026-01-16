@@ -3,6 +3,7 @@ import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { buildRoadmapData, roadmapToLines } from '@/lib/roadmap';
 import { renderSimplePdf } from '@/lib/pdf';
 import { fmtDateFR } from '@/lib/date';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,12 @@ function mapWeekType(value?: string | null) {
 
 export async function GET(req: Request) {
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const supabase = await createSupabaseServerClient();
     const { user, isAdmin } = await getAdminAuth(supabase);
     if (!user) {

@@ -13,6 +13,7 @@ import { DayPicker } from 'react-day-picker';
 import RoadmapPreview from '@/components/RoadmapPreview';
 import type { ConditionsJson, RoadmapEntry, RoadmapOverrides, RoadmapScheduleEntry } from '@/lib/roadmap';
 import { buildRoadmapData } from '@/lib/roadmap';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type ProgramType = 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 
@@ -349,6 +350,14 @@ export default function AdminResidencyDetailPage({
     [occurrences]
   );
 
+  const guardLegacy = () => {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return true;
+    }
+    return false;
+  };
+
   async function loadData() {
     if (!residencyId) {
       setError('Id de programmation manquant.');
@@ -359,6 +368,7 @@ export default function AdminResidencyDetailPage({
       setLoading(true);
       setError(null);
       setSuccess(null);
+      if (guardLegacy()) return;
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
@@ -510,6 +520,7 @@ export default function AdminResidencyDetailPage({
     status: 'CONFIRMED' | 'DECLINED'
   ) {
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       setError(null);
       setSuccess(null);
@@ -682,6 +693,7 @@ export default function AdminResidencyDetailPage({
 
   async function updateWeekType(week: ResidencyWeek, type: 'CALM' | 'BUSY') {
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const payload =
         type === week.type
@@ -704,6 +716,7 @@ export default function AdminResidencyDetailPage({
 
   async function confirmWeek(weekId: string, artistId: string) {
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const res = await fetch('/api/admin/residencies/confirm-week', {
         method: 'POST',
@@ -728,6 +741,7 @@ export default function AdminResidencyDetailPage({
       return;
     }
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       setError(null);
       const res = await fetch(`/api/admin/residencies/${residency.id}`, {
@@ -755,6 +769,7 @@ export default function AdminResidencyDetailPage({
   async function saveConditions() {
     if (!residency) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       setError(null);
       setConditionsErrors({});
@@ -829,6 +844,7 @@ export default function AdminResidencyDetailPage({
   async function saveRoadmapOverrides() {
     if (!residency) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       setError(null);
       const res = await fetch(`/api/admin/residencies/${residency.id}`, {
@@ -851,6 +867,7 @@ export default function AdminResidencyDetailPage({
   async function addDates() {
     if (!residency) return;
     try {
+      if (guardLegacy()) return;
       setAddDatesLoading(true);
       setAddDatesError(null);
       setAddDatesSuccess(null);
@@ -886,6 +903,7 @@ export default function AdminResidencyDetailPage({
     if (!residency) return;
     if (!window.confirm('Supprimer cette date ?')) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const res = await fetch('/api/admin/residency-occurrences', {
         method: 'DELETE',
@@ -906,6 +924,7 @@ export default function AdminResidencyDetailPage({
   async function saveAddress() {
     if (!residency) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const { error: upErr } = await supabase
         .from('residencies')
@@ -931,6 +950,7 @@ export default function AdminResidencyDetailPage({
     if (!residency) return;
     if (!window.confirm('Supprimer cette residence et ses semaines ?')) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const { error: delErr } = await supabase
         .from('residencies')
@@ -947,6 +967,7 @@ export default function AdminResidencyDetailPage({
 
   async function cancelConfirmation(weekId: string) {
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const res = await fetch('/api/admin/residencies/cancel-week', {
         method: 'POST',
@@ -967,6 +988,7 @@ export default function AdminResidencyDetailPage({
   async function cancelWeekSlot(weekId: string) {
     if (!window.confirm('Supprimer ce créneau ?')) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const res = await fetch('/api/admin/residencies/cancel-slot', {
         method: 'POST',
@@ -987,6 +1009,7 @@ export default function AdminResidencyDetailPage({
   async function sendInvitations() {
     if (!residency) return;
     try {
+      if (guardLegacy()) return;
       setActionLoading(true);
       const artistIds = Object.keys(selectedArtists).filter((id) => selectedArtists[id]);
       if (artistIds.length === 0) {

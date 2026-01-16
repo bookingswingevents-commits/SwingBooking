@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { generateResidencyWeeks } from '@/lib/residencyWeeks';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { isUuid } from '@/lib/uuid';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,6 +16,12 @@ function env(name: string) {
 
 export async function POST(req: Request) {
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json(
+        { ok: false, error: 'LEGACY_RESIDENCIES_DISABLED' },
+        { status: 503 }
+      );
+    }
     const supabaseUrl = env('NEXT_PUBLIC_SUPABASE_URL');
     const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
 

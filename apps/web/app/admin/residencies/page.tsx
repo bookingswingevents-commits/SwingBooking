@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { DayPicker } from 'react-day-picker';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type ClientRow = { id: string; name: string };
 
@@ -55,6 +56,10 @@ export default function AdminResidenciesPage() {
     try {
       setLoading(true);
       setError(null);
+      if (LEGACY_RESIDENCIES_DISABLED) {
+        setError('Module de programmation indisponible.');
+        return;
+      }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         router.push('/login');
@@ -96,13 +101,16 @@ export default function AdminResidenciesPage() {
     loadAll();
   }, []);
 
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const safeResidencies = Array.isArray(residencies) ? residencies : [];
+
   const clientOptions = useMemo(() => {
-    return clients.map((c) => (
+    return safeClients.map((c) => (
       <option key={c.id} value={c.id}>
         {c.name}
       </option>
     ));
-  }, [clients]);
+  }, [safeClients]);
 
   function formatDateISO(date: Date) {
     const normalized = new Date(date);
@@ -115,6 +123,10 @@ export default function AdminResidenciesPage() {
 
   async function createResidency(e: React.FormEvent) {
     e.preventDefault();
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     if (!clientId || !name) {
       setError('Merci de renseigner tous les champs.');
       return;
@@ -379,10 +391,10 @@ export default function AdminResidenciesPage() {
       ) : null}
 
       <div className="space-y-3">
-        {residencies.length === 0 ? (
+        {safeResidencies.length === 0 ? (
           <div className="text-sm text-slate-500">Aucune programmation pour le moment.</div>
         ) : null}
-        {residencies.map((r) => {
+        {safeResidencies.map((r) => {
           const clientName = Array.isArray(r.clients)
             ? r.clients[0]?.name
             : (r.clients as any)?.name;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +21,21 @@ export async function GET() {
     }
     if (!isAdmin) {
       return NextResponse.json({ ok: false, error: 'NOT_ADMIN' }, { status: 403 });
+    }
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json({
+        ok: true,
+        counts: {
+          programmations_actives: 0,
+          programmations_ouvertes: 0,
+          programmations_publiees: 0,
+          demandes_ouvertes: 0,
+          candidatures_en_attente: 0,
+          artistes_confirmes_a_venir: 0,
+          evenements_a_venir: 0,
+        },
+        actions: [],
+      });
     }
 
     const supaSrv = createClient(env('NEXT_PUBLIC_SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {

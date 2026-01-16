@@ -4,6 +4,7 @@ import { use, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { fmtDateFR } from '@/lib/date';
 import { labelForStatus } from '@/lib/i18n';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type InvitationRow = {
   id: string;
@@ -57,6 +58,10 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
       try {
         setLoading(true);
         setError(null);
+        if (LEGACY_RESIDENCIES_DISABLED) {
+          setError('Module de programmation indisponible.');
+          return;
+        }
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
         const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
         const publicSupa = createClient(supabaseUrl, anonKey, {
@@ -113,12 +118,17 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
 
   const appByWeek = useMemo(() => {
     const map = new Map<string, WeekApplication>();
-    for (const app of applications) map.set(app.residency_week_id, app);
+    const list = Array.isArray(applications) ? applications : [];
+    for (const app of list) map.set(app.residency_week_id, app);
     return map;
   }, [applications]);
 
   async function apply(week: ResidencyWeek) {
     if (!artistId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     try {
       setBusyWeekId(week.id);
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -158,6 +168,10 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
 
   async function withdraw(week: ResidencyWeek) {
     if (!artistId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     const existing = appByWeek.get(week.id);
     if (!existing) return;
     try {
@@ -189,6 +203,8 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
   if (error) return <div className="text-red-600">{error}</div>;
   if (!residency) return <div className="text-slate-500">Aucune residence.</div>;
 
+  const safeWeeks = Array.isArray(weeks) ? weeks : [];
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       <header className="space-y-2">
@@ -217,7 +233,7 @@ export default function AvailabilityPage({ params }: { params: Promise<{ token: 
       </section>
 
       <section className="space-y-3">
-        {weeks.map((w) => {
+        {safeWeeks.map((w) => {
           const app = appByWeek.get(w.id);
           const isConfirmed = w.status === 'CONFIRMED';
           const isApplied = app?.status === 'APPLIED';

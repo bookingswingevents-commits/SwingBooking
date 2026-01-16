@@ -1,0 +1,2 @@
+export const LEGACY_RESIDENCIES_DISABLED =
+  process.env.NEXT_PUBLIC_DISABLE_LEGACY_RESIDENCIES === 'true';

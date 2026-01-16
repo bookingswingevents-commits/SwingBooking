@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { getArtistIdentity } from '@/lib/artistIdentity';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 export async function GET() {
   const debugContext: Record<string, any> = {};
   try {
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      return NextResponse.json({ ok: true, items: [] });
+    }
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.getUser();
     debugContext.userId = user?.id ?? null;

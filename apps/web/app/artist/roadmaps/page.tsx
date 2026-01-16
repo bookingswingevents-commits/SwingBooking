@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { labelForEventFormat } from '@/lib/event-formats';
 import { getArtistIdentity } from '@/lib/artistIdentity';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type Formation = 'solo' | 'duo' | 'trio' | 'quartet' | 'dj';
 
@@ -94,7 +95,7 @@ export default function ArtistRoadmapsPage() {
         }
         setRows(Array.from(dedup.values()));
 
-        if (artistId) {
+        if (artistId && !LEGACY_RESIDENCIES_DISABLED) {
           const { data: weekBookings } = await supabase
             .from('week_bookings')
             .select(
@@ -120,6 +121,8 @@ export default function ArtistRoadmapsPage() {
             .filter((r: any) => r.week_id && r.residency_id && r.week_status !== 'CANCELLED');
 
           setResidencyRows(weekRows);
+        } else {
+          setResidencyRows([]);
         }
       } catch (e: any) {
         setError(e?.message ?? 'Erreur inconnue');
@@ -130,6 +133,9 @@ export default function ArtistRoadmapsPage() {
   }, []);
 
   if (loading) return <div className="text-slate-500">Chargement des feuilles de route…</div>;
+
+  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeResidencyRows = Array.isArray(residencyRows) ? residencyRows : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -151,13 +157,13 @@ export default function ArtistRoadmapsPage() {
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Programmations confirmées</h2>
-        {residencyRows.length === 0 ? (
+        {safeResidencyRows.length === 0 ? (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
             Aucune feuille de route de résidence pour le moment.
           </div>
         ) : (
           <ul className="space-y-3">
-            {residencyRows.map((r) => (
+            {safeResidencyRows.map((r) => (
               <li key={r.week_id} className="border rounded-2xl p-4 hover:shadow-sm space-y-2">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -193,13 +199,13 @@ export default function ArtistRoadmapsPage() {
         )}
       </section>
 
-      {rows.length === 0 && residencyRows.length === 0 ? (
+      {safeRows.length === 0 && safeResidencyRows.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
           Aucune feuille de route pour le moment.
         </div>
-      ) : rows.length > 0 ? (
+      ) : safeRows.length > 0 ? (
         <ul className="space-y-3">
-          {rows.map((r) => (
+          {safeRows.map((r) => (
             <li key={r.id} className="border rounded-2xl p-4 hover:shadow-sm space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">

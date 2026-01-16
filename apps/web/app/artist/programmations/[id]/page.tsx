@@ -8,6 +8,7 @@ import { supabase } from '@/lib/supabaseBrowser';
 import { fmtDateFR } from '@/lib/date';
 import { labelForStatus } from '@/lib/i18n';
 import { getArtistIdentity } from '@/lib/artistIdentity';
+import { LEGACY_RESIDENCIES_DISABLED } from '@/lib/featureFlags';
 
 type ResidencyRow = {
   id: string;
@@ -130,6 +131,10 @@ export default function ArtistProgrammationDetailPage({
         setLoading(true);
         setError(null);
 
+        if (LEGACY_RESIDENCIES_DISABLED) {
+          setError('Module de programmation indisponible.');
+          return;
+        }
         if (!residencyId) {
           setError('Id de programmation manquant.');
           return;
@@ -203,17 +208,20 @@ export default function ArtistProgrammationDetailPage({
 
   const appByWeek = useMemo(() => {
     const map = new Map<string, WeekApplication>();
-    for (const app of applications) map.set(app.residency_week_id, app);
+    const list = Array.isArray(applications) ? applications : [];
+    for (const app of list) map.set(app.residency_week_id, app);
     return map;
   }, [applications]);
 
   const appByDate = useMemo(() => {
     const map = new Map<string, ResidencyApplication>();
-    for (const app of dateApplications) map.set(app.date, app);
+    const list = Array.isArray(dateApplications) ? dateApplications : [];
+    for (const app of list) map.set(app.date, app);
     return map;
   }, [dateApplications]);
 
   async function refreshWeeksAndApps(currentArtistId: string) {
+    if (LEGACY_RESIDENCIES_DISABLED) return;
     const [weeksRes, appsRes] = await Promise.all([
       supabase
         .from('residency_weeks')
@@ -230,6 +238,7 @@ export default function ArtistProgrammationDetailPage({
   }
 
   async function refreshDateApplications(currentArtistId: string) {
+    if (LEGACY_RESIDENCIES_DISABLED) return;
     const { data: appData, error: appErr } = await supabase
       .from('residency_applications')
       .select('date, status')
@@ -240,6 +249,10 @@ export default function ArtistProgrammationDetailPage({
 
   async function apply(week: ResidencyWeek) {
     if (!artistId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     try {
       setBusyWeekId(week.id);
       const existing = appByWeek.get(week.id);
@@ -269,6 +282,10 @@ export default function ArtistProgrammationDetailPage({
 
   async function withdraw(week: ResidencyWeek) {
     if (!artistId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     const existing = appByWeek.get(week.id);
     if (!existing) return;
     try {
@@ -292,6 +309,10 @@ export default function ArtistProgrammationDetailPage({
 
   async function applyDate(date: string) {
     if (!artistId || !residencyId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     try {
       setBusyDate(date);
       setError(null);
@@ -316,6 +337,10 @@ export default function ArtistProgrammationDetailPage({
 
   async function cancelApplication(date: string) {
     if (!artistId || !residencyId) return;
+    if (LEGACY_RESIDENCIES_DISABLED) {
+      setError('Module de programmation indisponible.');
+      return;
+    }
     try {
       setBusyDate(date);
       setError(null);
@@ -342,6 +367,10 @@ export default function ArtistProgrammationDetailPage({
   if (loading) return <div className="text-slate-500">Chargement…</div>;
   if (error) return <div className="text-red-600">{error}</div>;
   if (!residency) return <div className="text-slate-500">Programmation introuvable.</div>;
+
+  const safeWeeks = Array.isArray(weeks) ? weeks : [];
+  const safeOccurrences = Array.isArray(occurrences) ? occurrences : [];
+  const safeDateApplications = Array.isArray(dateApplications) ? dateApplications : [];
 
   const clientName = Array.isArray(residency.clients)
     ? residency.clients[0]?.name
@@ -374,12 +403,12 @@ export default function ArtistProgrammationDetailPage({
   const remuneration = conditions.remuneration ?? {};
   const currency = remuneration.currency ?? residency.fee_currency ?? 'EUR';
   const suffix = remuneration.is_net === false || residency.fee_is_net === false ? 'brut' : 'net';
-  const hasConfirmedWeek = weeks.some((w) =>
+  const hasConfirmedWeek = safeWeeks.some((w) =>
     toArray(w.week_bookings).some(
       (b) => b.status === 'CONFIRMED' && (!artistId || b.artist_id === artistId)
     )
   );
-  const hasConfirmedDate = dateApplications.some((a) => a.status === 'CONFIRMED');
+  const hasConfirmedDate = safeDateApplications.some((a) => a.status === 'CONFIRMED');
   const canShowSensitive = hasConfirmedWeek || hasConfirmedDate;
 
   const remunerationLines: string[] = [];
@@ -412,7 +441,7 @@ export default function ArtistProgrammationDetailPage({
     }
   }
 
-  const confirmedBooking = weeks
+  const confirmedBooking = safeWeeks
     .flatMap((w) => toArray(w.week_bookings).map((b) => ({ week: w, booking: b })))
     .find((row) => row.booking.status === 'CONFIRMED' && (!artistId || row.booking.artist_id === artistId));
 
@@ -504,12 +533,12 @@ export default function ArtistProgrammationDetailPage({
           {cancelInfo ? (
             <div className="text-sm text-emerald-600">{cancelInfo}</div>
           ) : null}
-          {occurrences.length === 0 ? (
+          {safeOccurrences.length === 0 ? (
             <div className="text-sm text-amber-700">
               Les dates ne sont pas visibles pour votre compte. Contactez l’administrateur.
             </div>
           ) : (
-            occurrences.map((occ) => {
+            safeOccurrences.map((occ) => {
               const app = appByDate.get(occ.date);
               const appStatus = app?.status ?? null;
               const isApplied = appStatus === 'PENDING';
@@ -587,7 +616,7 @@ export default function ArtistProgrammationDetailPage({
       ) : (
         <section className="space-y-3">
           <h2 className="font-semibold">Semaines</h2>
-          {weeks.map((w) => {
+          {safeWeeks.map((w) => {
             const app = appByWeek.get(w.id);
             const isConfirmed = w.status === 'CONFIRMED';
             const bookings = toArray(w.week_bookings) as WeekBooking[];
