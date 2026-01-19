@@ -8,6 +8,7 @@ import {
   getProgrammingStatusTone,
   normalizeProgrammingStatus,
 } from '@/lib/programming/status';
+import StatusBadge from '@/components/programming/StatusBadge';
 
 export const dynamic = 'force-dynamic';
 
