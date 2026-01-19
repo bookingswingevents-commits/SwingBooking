@@ -73,6 +73,56 @@ export async function fetchOpenProgramsForArtist(supabase: SupabaseClient) {
   return Array.from(byProgram.values());
 }
 
+export async function fetchCompleteProgramsForArtist(
+  supabase: SupabaseClient,
+  openProgramIds: string[]
+) {
+  const { data, error } = await supabase
+    .from('programming_items')
+    .select('program_id, start_date, end_date, status, programming_programs(id, title, program_type, status, clients(name))')
+    .neq('status', ITEM_STATUS.OPEN);
+  if (error) throw error;
+
+  const byProgram = new Map<string, OpenProgramSummary>();
+  (data ?? []).forEach((item) => {
+    const program = Array.isArray(item.programming_programs)
+      ? item.programming_programs[0]
+      : item.programming_programs;
+    if (!program?.id) return;
+    if (openProgramIds.includes(program.id)) return;
+
+    const clientName = Array.isArray(program.clients)
+      ? program.clients[0]?.name
+      : (program.clients as any)?.name;
+
+    const existing = byProgram.get(program.id);
+    const start = item.start_date ?? null;
+    const end = item.end_date ?? item.start_date ?? null;
+    if (!existing) {
+      byProgram.set(program.id, {
+        id: program.id,
+        title: program.title ?? null,
+        program_type: program.program_type ?? null,
+        status: program.status ?? null,
+        client_name: clientName ?? null,
+        open_count: 0,
+        start_date: start,
+        end_date: end,
+      });
+      return;
+    }
+
+    if (start && (!existing.start_date || start < existing.start_date)) {
+      existing.start_date = start;
+    }
+    if (end && (!existing.end_date || end > existing.end_date)) {
+      existing.end_date = end;
+    }
+  });
+
+  return Array.from(byProgram.values());
+}
+
 export async function fetchProgram(supabase: SupabaseClient, programId: string) {
   const { data, error } = await supabase
     .from('programming_programs')
