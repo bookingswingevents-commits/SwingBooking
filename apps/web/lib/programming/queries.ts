@@ -24,10 +24,11 @@ type OpenProgramSummary = {
 };
 
 export async function fetchOpenProgramsForArtist(supabase: SupabaseClient) {
+  // On évite le statut "AVAILABLE" (absent en base) et on filtre en texte pour tolérer les enums.
   const { data, error } = await supabase
     .from('programming_items')
     .select('program_id, start_date, end_date, status, programming_programs(id, title, program_type, status, clients(name))')
-    .eq('status', ITEM_STATUS.OPEN);
+    .not('status', 'in', `(${['CONFIRMED', 'CLOSED', 'CANCELLED'].join(',')})`);
   if (error) throw error;
 
   const byProgram = new Map<string, OpenProgramSummary>();
@@ -38,7 +39,7 @@ export async function fetchOpenProgramsForArtist(supabase: SupabaseClient) {
     if (!program?.id) return;
 
     const normalizedStatus = program.status ? normalizeProgrammingStatus(program.status) : 'ACTIVE';
-    if (program.status && normalizedStatus !== 'ACTIVE') return;
+    if (program.status && !['ACTIVE', 'PUBLISHED'].includes(normalizedStatus)) return;
 
     const clientName = Array.isArray(program.clients)
       ? program.clients[0]?.name
@@ -77,10 +78,11 @@ export async function fetchCompleteProgramsForArtist(
   supabase: SupabaseClient,
   openProgramIds: string[]
 ) {
+  // Même filtre : pas d'AVAILABLE, et statut traité comme texte pour compatibilité.
   const { data, error } = await supabase
     .from('programming_items')
     .select('program_id, start_date, end_date, status, programming_programs(id, title, program_type, status, clients(name))')
-    .neq('status', ITEM_STATUS.OPEN);
+    .in('status', ['CONFIRMED', 'CLOSED', 'CANCELLED']);
   if (error) throw error;
 
   const byProgram = new Map<string, OpenProgramSummary>();
@@ -92,7 +94,7 @@ export async function fetchCompleteProgramsForArtist(
     if (openProgramIds.includes(program.id)) return;
 
     const normalizedStatus = program.status ? normalizeProgrammingStatus(program.status) : 'ACTIVE';
-    if (program.status && normalizedStatus !== 'ACTIVE') return;
+    if (program.status && !['ACTIVE', 'PUBLISHED'].includes(normalizedStatus)) return;
 
     const clientName = Array.isArray(program.clients)
       ? program.clients[0]?.name
