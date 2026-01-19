@@ -1,8 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { formatRangeFR } from '@/lib/date';
+import { getEffectiveSlotConditions, hasSlotOverride, formatFeeLabel } from '@/lib/programming/conditions';
 import { ITEM_STATUS } from '@/lib/programming/types';
 import { getApplicationStatusLabel } from '@/lib/programming/status';
+import SlotConditionsForm from './slot-conditions-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,8 +97,8 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
   if (!isAdmin) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Candidatures</h1>
-        <p className="text-red-600">Acces refuse (admin requis).</p>
+        <h1 className="text-2xl font-bold">Créneau</h1>
+        <p className="text-red-600">Accès refusé (admin requis).</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -106,7 +109,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
   const { data: item } = await supabase
     .from('programming_items')
     .select(
-      'id, item_type, start_date, end_date, status, program_id, programming_programs(id, title)'
+      'id, item_type, start_date, end_date, status, meta_json, program_id, programming_programs(id, title, conditions_json)'
     )
     .eq('id', itemId)
     .maybeSingle();
@@ -114,7 +117,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
   if (!item) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Candidatures</h1>
+        <h1 className="text-2xl font-bold">Créneau</h1>
         <p className="text-slate-500">Créneau introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -139,6 +142,14 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
     ? item.programming_programs[0]
     : item.programming_programs;
   const displayTitle = program?.title ?? 'Programmation';
+  const periodLabel = formatRangeFR(item.start_date, item.end_date);
+  const effectiveConditions = getEffectiveSlotConditions({
+    program: { conditions_json: (program as any)?.conditions_json },
+    item: { meta_json: item.meta_json ?? {} },
+  });
+  const overrideLabel = hasSlotOverride({ meta_json: item.meta_json })
+    ? 'spécifiques au créneau'
+    : 'par défaut de la programmation';
   const onConfirm = confirmArtistAction.bind(null, itemId);
 
   return (
@@ -147,11 +158,28 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
         <Link href={`/admin/programming/${program?.id ?? ''}/calendar`} className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
-        <h1 className="text-2xl font-bold">Candidatures</h1>
+        <h1 className="text-2xl font-bold">Créneau</h1>
         <p className="text-sm text-slate-600">
-          {displayTitle} • {item.start_date} → {item.end_date}
+          {displayTitle} • {periodLabel}
         </p>
       </header>
+
+      <section className="rounded-xl border p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-medium">Conditions du créneau</div>
+            <div className="text-xs text-slate-500">
+              Conditions appliquées : {overrideLabel}.
+            </div>
+          </div>
+          <div className="text-sm text-slate-600">{formatFeeLabel(effectiveConditions)}</div>
+        </div>
+        <SlotConditionsForm
+          itemId={item.id}
+          initialConditions={effectiveConditions}
+          hasOverride={hasSlotOverride({ meta_json: item.meta_json })}
+        />
+      </section>
 
       {sp.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-rose-700 text-sm">
@@ -172,20 +200,22 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
 
       {applications && applications.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucune candidature pour le moment.
+          Aucune demande pour le moment.
         </div>
       ) : (
-        <div className="rounded-xl border divide-y">
-          {(applications ?? []).map((app) => {
-            const artist = Array.isArray(app.artists) ? app.artists[0] : app.artists;
-            const option = app.option_json ?? {};
+        <div className="space-y-3">
+          <h2 className="text-sm font-semibold">Demandes</h2>
+          <div className="rounded-xl border divide-y">
+            {(applications ?? []).map((app) => {
+              const artist = Array.isArray(app.artists) ? app.artists[0] : app.artists;
+              const option = app.option_json ?? {};
             return (
               <div key={app.id} className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
                 <div className="space-y-1">
                   <div className="font-medium">{artist?.stage_name ?? 'Artiste'}</div>
                   <div className="text-xs text-slate-500">Statut : {getApplicationStatusLabel(app.status)}</div>
                   {option?.label ? (
-                    <div className="text-xs text-slate-500">Option: {option.label}</div>
+                    <div className="text-xs text-slate-500">Option : {option.label}</div>
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
@@ -201,6 +231,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
               </div>
             );
           })}
+        </div>
         </div>
       )}
     </div>

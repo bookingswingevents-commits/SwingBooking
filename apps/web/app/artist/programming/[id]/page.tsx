@@ -3,7 +3,9 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { fetchProgram, fetchProgramItems } from '@/lib/programming/queries';
 import { ITEM_STATUS, PROGRAM_STATUS } from '@/lib/programming/types';
+import { formatRangeFR } from '@/lib/date';
 import { getApplicationStatusLabel, getSlotStatusLabel } from '@/lib/programming/status';
+import { formatConditionsSummary, getEffectiveSlotConditions } from '@/lib/programming/conditions';
 import ItemRow from '@/components/programming/ItemRow';
 
 export const dynamic = 'force-dynamic';
@@ -200,13 +202,19 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
               : application
                 ? getApplicationStatusLabel(application.status)
                 : getSlotStatusLabel(item.status);
+            const effectiveConditions = getEffectiveSlotConditions({
+              program: { conditions_json: program.conditions_json ?? {} },
+              item: { meta_json: item.meta_json ?? {} },
+            });
+            const conditionsLabel = formatConditionsSummary(effectiveConditions);
             return (
               <div key={item.id} className="space-y-3">
                 <ItemRow
-                  title={`${item.start_date} → ${item.end_date}`}
+                  title={formatRangeFR(item.start_date, item.end_date)}
                   subtitle={item.item_type === 'WEEK' ? 'Semaine' : 'Date'}
                   status={statusLabel}
                 />
+                <div className="px-4 text-xs text-slate-500">Conditions : {conditionsLabel}</div>
                 {booking ? (
                   <div className="px-4 pb-4 text-sm text-emerald-700">Artiste confirmé.</div>
                 ) : null}

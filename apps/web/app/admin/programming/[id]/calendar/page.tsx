@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import WeeklyGeneratorForm from './weekly-generator-form';
 import StatusBadge from '@/components/programming/StatusBadge';
 import { formatRangeFR } from '@/lib/date';
+import { formatConditionsSummary, getEffectiveSlotConditions } from '@/lib/programming/conditions';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { ITEM_STATUS } from '@/lib/programming/types';
 import { getSlotStatusLabel, getSlotStatusTone } from '@/lib/programming/status';
@@ -153,7 +154,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
 
   const { data: program, error } = await supabase
     .from('programming_programs')
-    .select('id, title, program_type')
+    .select('id, title, program_type, conditions_json')
     .eq('id', id)
     .maybeSingle();
 
@@ -278,19 +279,27 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                 const booking = bookingByItem.get(item.id);
                 const applicationsCount = applicationCountByItem.get(item.id) ?? 0;
                 const isConfirmed = Boolean(booking);
+                const effectiveConditions = getEffectiveSlotConditions({
+                  program: { conditions_json: program.conditions_json ?? {} },
+                  item: { meta_json: item.meta_json ?? {} },
+                });
+                const conditionsLabel = formatConditionsSummary(effectiveConditions);
                 return (
                   <div
                     key={item.id}
                     className="grid gap-3 md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] items-center px-4 py-3 text-sm"
                   >
-                    <div className="font-medium">{periodLabel}</div>
+                    <div>
+                      <div className="font-medium">{periodLabel}</div>
+                      <div className="text-xs text-slate-500">{conditionsLabel}</div>
+                    </div>
                     <div>
                       <StatusBadge label={statusLabel} tone={statusTone} />
                     </div>
                     <div className="text-slate-600">{booking?.artist ?? '—'}</div>
                     <div className="text-slate-600">{applicationsCount}</div>
                     <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/programming/${program.id}/conditions`} className="btn">
+                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
                         Modifier les conditions
                       </Link>
                       <Link href={`/admin/programming/items/${item.id}`} className="btn">
@@ -344,19 +353,27 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                 const booking = bookingByItem.get(item.id);
                 const applicationsCount = applicationCountByItem.get(item.id) ?? 0;
                 const isConfirmed = Boolean(booking);
+                const effectiveConditions = getEffectiveSlotConditions({
+                  program: { conditions_json: program.conditions_json ?? {} },
+                  item: { meta_json: item.meta_json ?? {} },
+                });
+                const conditionsLabel = formatConditionsSummary(effectiveConditions);
                 return (
                   <div
                     key={item.id}
                     className="grid gap-3 md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] items-center px-4 py-3 text-sm"
                   >
-                    <div className="font-medium">{periodLabel}</div>
+                    <div>
+                      <div className="font-medium">{periodLabel}</div>
+                      <div className="text-xs text-slate-500">{conditionsLabel}</div>
+                    </div>
                     <div>
                       <StatusBadge label={statusLabel} tone={statusTone} />
                     </div>
                     <div className="text-slate-600">{booking?.artist ?? '—'}</div>
                     <div className="text-slate-600">{applicationsCount}</div>
                     <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/programming/${program.id}/conditions`} className="btn">
+                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
                         Modifier les conditions
                       </Link>
                       <Link href={`/admin/programming/items/${item.id}`} className="btn">
