@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
-import { fetchPublishedPrograms } from '@/lib/programming/queries';
-import { PROGRAM_STATUS } from '@/lib/programming/types';
-import { getProgrammingStatusLabel } from '@/lib/programming/status';
-import ItemRow from '@/components/programming/ItemRow';
+import { formatRangeFR } from '@/lib/date';
+import { fetchOpenProgramsForArtist } from '@/lib/programming/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,14 +52,19 @@ export default async function ArtistProgrammingPage() {
     );
   }
 
-  const programs = await fetchPublishedPrograms(supabase);
+  let programs: Awaited<ReturnType<typeof fetchOpenProgramsForArtist>> = [];
+  try {
+    programs = await fetchOpenProgramsForArtist(supabase);
+  } catch {
+    programs = [];
+  }
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Programmations</h1>
-          <p className="text-sm text-slate-600">Choisissez une programmation ouverte.</p>
+          <p className="text-sm text-slate-600">Choisissez une programmation disponible.</p>
         </div>
         <Link href="/dashboard" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -70,19 +73,34 @@ export default async function ArtistProgrammingPage() {
 
       {programs.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucune programmation ouverte pour le moment.
+          Aucune programmation disponible pour le moment. Revenez plus tard ou complétez votre profil si nécessaire.
         </div>
       ) : (
         <div className="rounded-xl border divide-y">
-          {programs.map((program) => (
-            <Link key={program.id} href={`/artist/programming/${program.id}`}>
-              <ItemRow
-                title={program.title ?? 'Programmation'}
-                subtitle={labelProgramType(program.program_type)}
-                status={getProgrammingStatusLabel(program.status ?? PROGRAM_STATUS.PUBLISHED)}
-              />
-            </Link>
-          ))}
+          {programs.map((program) => {
+            const periodLabel = formatRangeFR(program.start_date, program.end_date);
+            const openLabel =
+              program.open_count === 1
+                ? '1 créneau disponible'
+                : `${program.open_count} créneaux disponibles`;
+            return (
+              <div key={program.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="space-y-1">
+                  <div className="font-semibold">{program.title ?? 'Programmation'}</div>
+                  <div className="text-sm text-slate-600">
+                    {program.client_name ?? 'Client'} • {labelProgramType(program.program_type)}
+                  </div>
+                  <div className="text-xs text-slate-500">{periodLabel}</div>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-sm text-slate-600">{openLabel}</div>
+                  <Link href={`/artist/programming/${program.id}`} className="btn btn-primary">
+                    Voir les créneaux
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

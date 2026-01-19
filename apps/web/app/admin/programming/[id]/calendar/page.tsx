@@ -302,9 +302,6 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                       <Link href={`/admin/programming/items/${item.id}`} className="btn">
                         Modifier les conditions
                       </Link>
-                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
-                        Voir les demandes
-                      </Link>
                       {isConfirmed ? (
                         <button className="btn" type="button" disabled aria-disabled>
                           Créneau confirmé
@@ -375,9 +372,6 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
                     <div className="flex flex-wrap gap-2">
                       <Link href={`/admin/programming/items/${item.id}`} className="btn">
                         Modifier les conditions
-                      </Link>
-                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
-                        Voir les demandes
                       </Link>
                       {isConfirmed ? (
                         <button className="btn" type="button" disabled aria-disabled>
