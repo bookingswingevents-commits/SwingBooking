@@ -1,5 +1,21 @@
 export type ProgramType = 'MULTI_DATES' | 'WEEKLY_RESIDENCY';
 
+export const PROGRAM_STATUS = {
+  DRAFT: 'draft',
+  PUBLISHED: 'published',
+  ARCHIVED: 'archived',
+} as const;
+
+export type ProgramStatus = (typeof PROGRAM_STATUS)[keyof typeof PROGRAM_STATUS];
+
+export const ITEM_STATUS = {
+  OPEN: 'OPEN',
+  CLOSED: 'CLOSED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type ItemStatus = (typeof ITEM_STATUS)[keyof typeof ITEM_STATUS];
+
 export type ProgrammingProgram = {
   id: string;
   title: string | null;
@@ -7,7 +23,7 @@ export type ProgrammingProgram = {
   conditions_json: any;
   is_public?: boolean;
   is_open?: boolean;
-  status?: 'draft' | 'published' | 'archived';
+  status?: ProgramStatus;
 };
 
 export type ProgrammingItem = {
@@ -16,7 +32,7 @@ export type ProgrammingItem = {
   item_type: 'DATE' | 'WEEK';
   start_date: string;
   end_date: string;
-  status: 'OPEN' | 'CLOSED' | 'CANCELLED';
+  status: ItemStatus;
   meta_json: Record<string, any>;
 };
 

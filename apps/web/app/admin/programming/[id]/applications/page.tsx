@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { createSnapshot } from '@/lib/programming/snapshot';
+import { ITEM_STATUS } from '@/lib/programming/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -240,7 +241,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
                               <div className="text-xs text-slate-500">Option: {app.option_json.label}</div>
                             ) : null}
                           </div>
-                          {!bookingArtist && item.status === 'OPEN' ? (
+                        {!bookingArtist && item.status === ITEM_STATUS.OPEN ? (
                             <form action={onConfirm}>
                               <input type="hidden" name="item_id" value={item.id} />
                               <input type="hidden" name="application_id" value={app.id} />

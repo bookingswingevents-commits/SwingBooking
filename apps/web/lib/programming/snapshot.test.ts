@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createSnapshot } from './snapshot';
+import { ITEM_STATUS } from './types';
 
 describe('createSnapshot', () => {
   it('merges program, item, application, and artist data', () => {
@@ -12,7 +13,7 @@ describe('createSnapshot', () => {
         item_type: 'DATE',
         start_date: '2025-01-01',
         end_date: '2025-01-01',
-        status: 'OPEN',
+        status: ITEM_STATUS.OPEN,
         meta_json: { week_type: 'CALM' },
       },
       application: { id: 'app', option_json: { label: 'Solo' } },

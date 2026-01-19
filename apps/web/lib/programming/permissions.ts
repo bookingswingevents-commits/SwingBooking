@@ -1,4 +1,5 @@
 import type { ProgrammingItem, ProgrammingProgram } from './types';
+import { ITEM_STATUS } from './types';
 
 type Actor = {
   role?: 'admin' | 'artist' | 'client' | string | null;
@@ -35,7 +36,7 @@ export function canArtistReadItem(
   if (canAdminAccess(actor)) return true;
   if (actor?.role !== 'artist' || !actor.artistId) return false;
 
-  const isOpen = program.is_public === true && program.is_open === true && item.status === 'OPEN';
+  const isOpen = program.is_public === true && program.is_open === true && item.status === ITEM_STATUS.OPEN;
   const isOwner =
     applications.some((app) => app.item_id === item.id && app.artist_id === actor.artistId) ||
     bookings.some((bk) => bk.item_id === item.id && bk.artist_id === actor.artistId);
@@ -50,7 +51,7 @@ export function canArtistApply(
 ) {
   if (canAdminAccess(actor)) return true;
   if (actor?.role !== 'artist' || !actor.artistId) return false;
-  return program.is_public === true && program.is_open === true && item.status === 'OPEN';
+  return program.is_public === true && program.is_open === true && item.status === ITEM_STATUS.OPEN;
 }
 
 export function canArtistReadBooking(actor: Actor | null | undefined, booking: BookingRow) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { ITEM_STATUS } from '@/lib/programming/types';
 
 type GenerateWeeksResult = {
   ok: boolean;
@@ -142,7 +143,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const blocked = newItems.some((range) =>
     existingItems.some((item) => {
-      if (item.status === 'CANCELLED') return false;
+      if (item.status === ITEM_STATUS.CANCELLED) return false;
       const itemStart = parseDateUTC(item.start_date);
       const itemEnd = item.item_type === 'DATE' ? addDays(itemStart, 1) : parseDateUTC(item.end_date);
       return overlap(range.start, range.end, itemStart, itemEnd);
@@ -165,7 +166,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     item_type: 'WEEK',
     start_date: formatDateUTC(range.start),
     end_date: formatDateUTC(range.end),
-    status: 'OPEN',
+    status: ITEM_STATUS.OPEN,
     meta_json: { week_type: 'CALM' },
   }));
 

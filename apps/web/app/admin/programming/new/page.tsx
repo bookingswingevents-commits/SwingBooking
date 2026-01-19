@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { PROGRAM_STATUS } from '@/lib/programming/types';
 import ProgrammingForm from './programming-form';
 
 export const dynamic = 'force-dynamic';
@@ -41,7 +42,7 @@ async function createProgrammingAction(
       title,
       client_id,
       program_type,
-      status: 'draft',
+      status: PROGRAM_STATUS.DRAFT,
       conditions_json: {},
     })
     .select('id, title')

@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import WeeklyGeneratorForm from './weekly-generator-form';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { ITEM_STATUS } from '@/lib/programming/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -79,7 +80,7 @@ async function addDateAction(formData: FormData) {
   const newEnd = addDays(newStart, 1);
 
   const blocked = items.some((item) => {
-    if (item.status === 'CANCELLED') return false;
+    if (item.status === ITEM_STATUS.CANCELLED) return false;
     const itemStart = parseDateUTC(item.start_date);
     const itemEnd = item.item_type === 'DATE' ? addDays(itemStart, 1) : parseDateUTC(item.end_date);
     return overlap(newStart, newEnd, itemStart, itemEnd);
@@ -94,7 +95,7 @@ async function addDateAction(formData: FormData) {
     item_type: 'DATE',
     start_date: date,
     end_date: date,
-    status: 'OPEN',
+    status: ITEM_STATUS.OPEN,
     meta_json: {},
   });
 

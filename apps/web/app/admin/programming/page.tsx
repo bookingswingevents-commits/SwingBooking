@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { PROGRAM_STATUS } from '@/lib/programming/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,7 +78,7 @@ export default async function AdminProgrammingPage() {
                   </div>
                 </div>
                 <span className="text-xs uppercase tracking-wide text-slate-500">
-                  {(program.status ?? 'draft').toUpperCase()}
+                  {(program.status ?? PROGRAM_STATUS.DRAFT).toUpperCase()}
                 </span>
               </Link>
             );

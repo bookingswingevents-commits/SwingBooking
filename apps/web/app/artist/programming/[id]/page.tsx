@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { fetchProgram, fetchProgramItems } from '@/lib/programming/queries';
+import { ITEM_STATUS, PROGRAM_STATUS } from '@/lib/programming/types';
 import ItemRow from '@/components/programming/ItemRow';
 
 export const dynamic = 'force-dynamic';
@@ -63,7 +64,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
     .select('status')
     .eq('id', programId)
     .maybeSingle();
-  if (!program || program.status !== 'PUBLISHED') {
+  if (!program || program.status !== PROGRAM_STATUS.PUBLISHED) {
     redirect(`/artist/programming/${programId}?error=Programmation%20non%20publiee`);
   }
 
@@ -73,7 +74,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
     .eq('id', itemId)
     .eq('program_id', programId)
     .maybeSingle();
-  if (!item || item.status !== 'OPEN') {
+  if (!item || item.status !== ITEM_STATUS.OPEN) {
     redirect(`/artist/programming/${programId}?error=Item%20non%20disponible`);
   }
 
@@ -188,8 +189,8 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
             const application = appMap.get(item.id);
             const booking = bookingMap.get(item.id);
             const canApply =
-              program.status === 'PUBLISHED' &&
-              item.status === 'OPEN' &&
+              program.status === PROGRAM_STATUS.PUBLISHED &&
+              item.status === ITEM_STATUS.OPEN &&
               !application &&
               !booking;
             const onApply = applyToItem.bind(null, program.id, item.id);

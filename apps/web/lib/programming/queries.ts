@@ -1,10 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { PROGRAM_STATUS } from './types';
 
 export async function fetchPublishedPrograms(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('programming_programs')
     .select('id, title, program_type, status')
-    .eq('status', 'PUBLISHED')
+    .eq('status', PROGRAM_STATUS.PUBLISHED)
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data ?? [];

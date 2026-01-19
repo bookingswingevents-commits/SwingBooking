@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
+import { ITEM_STATUS } from '@/lib/programming/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ async function confirmArtistAction(itemId: string, formData: FormData) {
     .eq('id', itemId)
     .maybeSingle();
 
-  if (!item || item.status !== 'OPEN') {
+  if (!item || item.status !== ITEM_STATUS.OPEN) {
     redirect(`/admin/programming/items/${itemId}?error=Item%20non%20ouvert`);
   }
 
@@ -73,7 +74,7 @@ async function confirmArtistAction(itemId: string, formData: FormData) {
     redirect(`/admin/programming/items/${itemId}?error=Confirmation%20impossible`);
   }
 
-  await supabase.from('programming_items').update({ status: 'CLOSED' }).eq('id', itemId);
+  await supabase.from('programming_items').update({ status: ITEM_STATUS.CLOSED }).eq('id', itemId);
   await supabase
     .from('programming_applications')
     .update({ status: 'REJECTED' })
@@ -187,7 +188,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
                   ) : null}
                 </div>
                 <div className="flex items-center gap-2">
-                  {!booking && item.status === 'OPEN' ? (
+                  {!booking && item.status === ITEM_STATUS.OPEN ? (
                     <form action={onConfirm}>
                       <input type="hidden" name="application_id" value={app.id} />
                       <button className="btn btn-primary" type="submit">
