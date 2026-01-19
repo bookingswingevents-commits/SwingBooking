@@ -60,7 +60,7 @@ export default function WeeklyGeneratorForm({ programId }: WeeklyGeneratorFormPr
         setState((prev) => ({
           ...prev,
           pending: false,
-          error: payload.error ?? 'Generation impossible.',
+        error: payload.error ?? 'Génération impossible.',
           details: payload.details,
           success: undefined,
         }));
@@ -81,8 +81,8 @@ export default function WeeklyGeneratorForm({ programId }: WeeklyGeneratorFormPr
       setState((prev) => ({
         ...prev,
         pending: false,
-        error: 'Generation impossible.',
-        details: 'Erreur reseau. Merci de reessayer.',
+        error: 'Génération impossible.',
+        details: 'Erreur réseau. Merci de réessayer.',
         success: undefined,
       }));
     }
@@ -104,7 +104,7 @@ export default function WeeklyGeneratorForm({ programId }: WeeklyGeneratorFormPr
       <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-[1fr_1fr_auto] items-end">
         <div className="space-y-1">
           <label className="text-sm font-medium" htmlFor="start_date">
-            Debut
+            Début
           </label>
           <input
             id="start_date"
@@ -133,7 +133,7 @@ export default function WeeklyGeneratorForm({ programId }: WeeklyGeneratorFormPr
           />
         </div>
         <button className="btn btn-primary" type="submit" disabled={state.pending}>
-          {state.pending ? 'Generation...' : 'Generer les semaines'}
+          {state.pending ? 'Génération...' : 'Générer les semaines'}
         </button>
       </form>
     </div>

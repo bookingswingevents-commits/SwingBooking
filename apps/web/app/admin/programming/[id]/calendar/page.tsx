@@ -1,8 +1,11 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import WeeklyGeneratorForm from './weekly-generator-form';
+import StatusBadge from '@/components/programming/StatusBadge';
+import { formatRangeFR } from '@/lib/date';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { ITEM_STATUS } from '@/lib/programming/types';
+import { getSlotStatusLabel, getSlotStatusTone } from '@/lib/programming/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -130,39 +133,6 @@ async function removeItemAction(formData: FormData) {
   redirect(`/admin/programming/${programId}/calendar?success=Element%20supprime`);
 }
 
-async function updateWeekTypeAction(formData: FormData) {
-  'use server';
-  const programId = String(formData.get('program_id') ?? '').trim();
-  const itemId = String(formData.get('item_id') ?? '').trim();
-  const weekType = String(formData.get('week_type') ?? '').trim();
-  if (!programId || !itemId || !weekType) return;
-
-  const supabase = await createSupabaseServerClient();
-  const { user, isAdmin } = await getAdminAuth(supabase);
-  if (!user) redirect('/login');
-  if (!isAdmin) redirect('/admin/programming');
-
-  const { data: item } = await supabase
-    .from('programming_items')
-    .select('meta_json')
-    .eq('id', itemId)
-    .eq('program_id', programId)
-    .maybeSingle();
-
-  const metadata = { ...(item?.meta_json ?? {}), week_type: weekType };
-  const { error } = await supabase
-    .from('programming_items')
-    .update({ meta_json: metadata })
-    .eq('id', itemId)
-    .eq('program_id', programId);
-
-  if (error) {
-    redirect(`/admin/programming/${programId}/calendar?error=Mise%20a%20jour%20impossible`);
-  }
-
-  redirect(`/admin/programming/${programId}/calendar?success=Type%20de%20semaine%20mis%20a%20jour`);
-}
-
 export default async function AdminProgrammingCalendarPage({ params, searchParams }: CalendarPageProps) {
   const { id } = await params;
   const sp = (await searchParams) ?? {};
@@ -172,8 +142,8 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
   if (!isAdmin) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Calendrier</h1>
-        <p className="text-red-600">Acces refuse (admin requis).</p>
+        <h1 className="text-2xl font-bold">Créneaux</h1>
+        <p className="text-red-600">Accès refusé (admin requis).</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -190,7 +160,7 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
   if (error || !program) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-bold">Calendrier</h1>
+        <h1 className="text-2xl font-bold">Créneaux</h1>
         <p className="text-slate-500">Programmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
@@ -208,13 +178,49 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
     program.program_type === 'MULTI_DATES' ? item.item_type === 'DATE' : item.item_type === 'WEEK'
   );
 
+  const itemIds = filteredItems.map((item) => item.id);
+  const bookingByItem = new Map<string, { artist?: string | null }>();
+  const applicationCountByItem = new Map<string, number>();
+
+  if (itemIds.length > 0) {
+    try {
+      const { data: bookings } = await supabase
+        .from('programming_bookings')
+        .select('id, item_id, status, artists(stage_name)')
+        .in('item_id', itemIds);
+      (bookings ?? []).forEach((booking) => {
+        const artist = Array.isArray(booking.artists) ? booking.artists[0] : booking.artists;
+        bookingByItem.set(booking.item_id, { artist: artist?.stage_name ?? 'Artiste confirmé' });
+      });
+    } catch {
+      bookingByItem.clear();
+    }
+
+    try {
+      const { data: applications } = await supabase
+        .from('programming_applications')
+        .select('id, item_id')
+        .in('item_id', itemIds);
+      (applications ?? []).forEach((application) => {
+        applicationCountByItem.set(
+          application.item_id,
+          (applicationCountByItem.get(application.item_id) ?? 0) + 1
+        );
+      });
+    } catch {
+      applicationCountByItem.clear();
+    }
+  }
+
+  const hasConfirmedArtist = bookingByItem.size > 0;
+
   return (
     <div className="max-w-5xl mx-auto space-y-6">
       <header className="space-y-2">
         <Link href={`/admin/programming/${program.id}`} className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
-        <h1 className="text-2xl font-bold">Calendrier</h1>
+        <h1 className="text-2xl font-bold">Créneaux</h1>
         <p className="text-sm text-slate-600">
           {program.title ?? 'Programmation'} • {labelProgramType(program.program_type)}
         </p>
@@ -231,9 +237,15 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
         </div>
       ) : null}
 
+      {!hasConfirmedArtist ? (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-slate-600 text-sm">
+          Aucun artiste confirmé sur cette programmation.
+        </div>
+      ) : null}
+
       {program.program_type === 'MULTI_DATES' ? (
         <section className="rounded-xl border p-4 space-y-3">
-          <h2 className="font-semibold">Dates</h2>
+          <h2 className="font-semibold">Créneaux</h2>
           <form action={addDateAction} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="program_id" value={program.id} />
             <div className="space-y-1">
@@ -247,72 +259,129 @@ export default async function AdminProgrammingCalendarPage({ params, searchParam
             </button>
           </form>
           {filteredItems.length === 0 ? (
-            <div className="text-sm text-slate-500">Aucune date pour le moment.</div>
+            <div className="text-sm text-slate-500">
+              Aucun créneau pour le moment. Commence par générer ou ajouter des dates.
+            </div>
           ) : (
             <div className="rounded-lg border divide-y">
-              {filteredItems.map((item) => (
-                <div key={item.id} className="flex items-center justify-between p-3 text-sm">
-                  <div>{item.start_date}</div>
-                  <div className="flex items-center gap-2">
-                    <Link href={`/admin/programming/items/${item.id}`} className="btn">
-                      Candidatures
-                    </Link>
-                    <form action={removeItemAction}>
-                      <input type="hidden" name="program_id" value={program.id} />
-                      <input type="hidden" name="item_id" value={item.id} />
-                      <button className="btn" type="submit">
-                        Supprimer
-                      </button>
-                    </form>
+              <div className="hidden md:grid md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] gap-3 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
+                <div>Période</div>
+                <div>Statut</div>
+                <div>Artiste confirmé</div>
+                <div>Demandes</div>
+                <div>Actions</div>
+              </div>
+              {filteredItems.map((item) => {
+                const periodLabel = formatRangeFR(item.start_date, item.end_date);
+                const statusLabel = getSlotStatusLabel(item.status);
+                const statusTone = getSlotStatusTone(item.status);
+                const booking = bookingByItem.get(item.id);
+                const applicationsCount = applicationCountByItem.get(item.id) ?? 0;
+                const isConfirmed = Boolean(booking);
+                return (
+                  <div
+                    key={item.id}
+                    className="grid gap-3 md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] items-center px-4 py-3 text-sm"
+                  >
+                    <div className="font-medium">{periodLabel}</div>
+                    <div>
+                      <StatusBadge label={statusLabel} tone={statusTone} />
+                    </div>
+                    <div className="text-slate-600">{booking?.artist ?? '—'}</div>
+                    <div className="text-slate-600">{applicationsCount}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/admin/programming/${program.id}/conditions`} className="btn">
+                        Modifier les conditions
+                      </Link>
+                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
+                        Voir les demandes
+                      </Link>
+                      {isConfirmed ? (
+                        <button className="btn" type="button" disabled aria-disabled>
+                          Créneau confirmé
+                        </button>
+                      ) : (
+                        <Link href={`/admin/programming/items/${item.id}`} className="btn btn-primary">
+                          Confirmer un artiste
+                        </Link>
+                      )}
+                      <form action={removeItemAction}>
+                        <input type="hidden" name="program_id" value={program.id} />
+                        <input type="hidden" name="item_id" value={item.id} />
+                        <button className="btn" type="submit">
+                          Supprimer
+                        </button>
+                      </form>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
       ) : (
         <section className="rounded-xl border p-4 space-y-4">
-          <h2 className="font-semibold">Semaines</h2>
+          <h2 className="font-semibold">Créneaux</h2>
           <WeeklyGeneratorForm programId={program.id} />
 
           {filteredItems.length === 0 ? (
-            <div className="text-sm text-slate-500">Aucune semaine pour le moment.</div>
+            <div className="text-sm text-slate-500">
+              Aucun créneau pour le moment. Commence par générer ou ajouter des dates.
+            </div>
           ) : (
             <div className="rounded-lg border divide-y">
-              {filteredItems.map((item) => (
-                <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
-                  <div>
-                    {item.start_date} → {item.end_date}
+              <div className="hidden md:grid md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] gap-3 px-4 py-2 text-xs uppercase tracking-wide text-slate-500">
+                <div>Période</div>
+                <div>Statut</div>
+                <div>Artiste confirmé</div>
+                <div>Demandes</div>
+                <div>Actions</div>
+              </div>
+              {filteredItems.map((item) => {
+                const periodLabel = formatRangeFR(item.start_date, item.end_date);
+                const statusLabel = getSlotStatusLabel(item.status);
+                const statusTone = getSlotStatusTone(item.status);
+                const booking = bookingByItem.get(item.id);
+                const applicationsCount = applicationCountByItem.get(item.id) ?? 0;
+                const isConfirmed = Boolean(booking);
+                return (
+                  <div
+                    key={item.id}
+                    className="grid gap-3 md:grid-cols-[2fr_1fr_1.2fr_0.8fr_1.8fr] items-center px-4 py-3 text-sm"
+                  >
+                    <div className="font-medium">{periodLabel}</div>
+                    <div>
+                      <StatusBadge label={statusLabel} tone={statusTone} />
+                    </div>
+                    <div className="text-slate-600">{booking?.artist ?? '—'}</div>
+                    <div className="text-slate-600">{applicationsCount}</div>
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/admin/programming/${program.id}/conditions`} className="btn">
+                        Modifier les conditions
+                      </Link>
+                      <Link href={`/admin/programming/items/${item.id}`} className="btn">
+                        Voir les demandes
+                      </Link>
+                      {isConfirmed ? (
+                        <button className="btn" type="button" disabled aria-disabled>
+                          Créneau confirmé
+                        </button>
+                      ) : (
+                        <Link href={`/admin/programming/items/${item.id}`} className="btn btn-primary">
+                          Confirmer un artiste
+                        </Link>
+                      )}
+                      <form action={removeItemAction}>
+                        <input type="hidden" name="program_id" value={program.id} />
+                        <input type="hidden" name="item_id" value={item.id} />
+                        <button className="btn" type="submit">
+                          Supprimer
+                        </button>
+                      </form>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <form action={updateWeekTypeAction} className="flex items-center gap-2">
-                      <input type="hidden" name="program_id" value={program.id} />
-                      <input type="hidden" name="item_id" value={item.id} />
-                      <select
-                        name="week_type"
-                        className="border rounded-lg px-2 py-1"
-                        defaultValue={item.meta_json?.week_type ?? 'CALM'}
-                      >
-                        <option value="CALM">CALM</option>
-                        <option value="PEAK">PEAK</option>
-                      </select>
-                      <button className="btn" type="submit">
-                        Mettre a jour
-                      </button>
-                    </form>
-                    <Link href={`/admin/programming/items/${item.id}`} className="btn">
-                      Candidatures
-                    </Link>
-                    <form action={removeItemAction}>
-                      <input type="hidden" name="program_id" value={program.id} />
-                      <input type="hidden" name="item_id" value={item.id} />
-                      <button className="btn" type="submit">
-                        Supprimer
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
