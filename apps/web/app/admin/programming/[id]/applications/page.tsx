@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { createSnapshot } from '@/lib/programming/snapshot';
 import { ITEM_STATUS } from '@/lib/programming/types';
+import { getApplicationStatusLabel, getSlotStatusLabel } from '@/lib/programming/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,7 @@ async function confirmBooking(programId: string, formData: FormData) {
     .eq('id', itemId)
     .maybeSingle();
   if (!item) {
-    redirect(`/admin/programming/${programId}/applications?error=Item%20introuvable`);
+    redirect(`/admin/programming/${programId}/applications?error=Cr%C3%A9neau%20introuvable`);
   }
 
   const { data: application } = await supabase
@@ -110,7 +111,7 @@ async function confirmBooking(programId: string, formData: FormData) {
     redirect(`/admin/programming/${programId}/applications?error=Confirmation%20impossible`);
   }
 
-  redirect(`/admin/programming/${programId}/applications?success=Booking%20confirme`);
+  redirect(`/admin/programming/${programId}/applications?success=Artiste%20confirm%C3%A9`);
 }
 
 export default async function AdminProgrammingApplicationsPage({ params, searchParams }: PageProps) {
@@ -205,7 +206,7 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
 
       {(items ?? []).length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucun item pour cette programmation.
+          Aucun créneau pour cette programmation.
         </div>
       ) : (
         <div className="space-y-4">
@@ -219,10 +220,10 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
                     <div className="font-semibold">
                       {item.start_date} → {item.end_date}
                     </div>
-                    <div className="text-xs text-slate-500">Statut: {item.status}</div>
+                    <div className="text-xs text-slate-500">Statut : {getSlotStatusLabel(item.status)}</div>
                   </div>
                   {bookingArtist ? (
-                    <span className="text-xs text-emerald-600">Booking confirme</span>
+                    <span className="text-xs text-emerald-600">Artiste confirmé</span>
                   ) : null}
                 </div>
 
@@ -236,9 +237,11 @@ export default async function AdminProgrammingApplicationsPage({ params, searchP
                         <div key={app.id} className="flex flex-wrap items-center justify-between gap-3 text-sm border rounded-lg p-3">
                           <div>
                             <div className="font-medium">{artist?.stage_name ?? 'Artiste'}</div>
-                            <div className="text-xs text-slate-500">Statut: {app.status}</div>
+                            <div className="text-xs text-slate-500">
+                              Statut : {getApplicationStatusLabel(app.status)}
+                            </div>
                             {app.option_json?.label ? (
-                              <div className="text-xs text-slate-500">Option: {app.option_json.label}</div>
+                              <div className="text-xs text-slate-500">Option : {app.option_json.label}</div>
                             ) : null}
                           </div>
                         {!bookingArtist && item.status === ITEM_STATUS.OPEN ? (

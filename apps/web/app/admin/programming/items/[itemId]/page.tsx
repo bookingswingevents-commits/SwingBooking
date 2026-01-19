@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { ITEM_STATUS } from '@/lib/programming/types';
+import { getApplicationStatusLabel } from '@/lib/programming/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ async function confirmArtistAction(itemId: string, formData: FormData) {
     .maybeSingle();
 
   if (!item || item.status !== ITEM_STATUS.OPEN) {
-    redirect(`/admin/programming/items/${itemId}?error=Item%20non%20ouvert`);
+    redirect(`/admin/programming/items/${itemId}?error=Cr%C3%A9neau%20non%20ouvert`);
   }
 
   const { data: application } = await supabase
@@ -55,7 +56,7 @@ async function confirmArtistAction(itemId: string, formData: FormData) {
     .eq('item_id', itemId)
     .maybeSingle();
   if (existingBooking) {
-    redirect(`/admin/programming/items/${itemId}?error=Item%20deja%20reserve`);
+    redirect(`/admin/programming/items/${itemId}?error=Cr%C3%A9neau%20d%C3%A9j%C3%A0%20r%C3%A9serv%C3%A9`);
   }
 
   const program = Array.isArray(item.programming_programs)
@@ -114,7 +115,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Candidatures</h1>
-        <p className="text-slate-500">Item introuvable.</p>
+        <p className="text-slate-500">Créneau introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>
@@ -165,7 +166,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
 
       {booking ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-emerald-700 text-sm">
-          Booking confirme pour cet item.
+          Artiste confirmé pour ce créneau.
         </div>
       ) : null}
 
@@ -182,7 +183,7 @@ export default async function AdminProgrammingItemPage({ params, searchParams }:
               <div key={app.id} className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
                 <div className="space-y-1">
                   <div className="font-medium">{artist?.stage_name ?? 'Artiste'}</div>
-                  <div className="text-xs text-slate-500">Statut: {app.status}</div>
+                  <div className="text-xs text-slate-500">Statut : {getApplicationStatusLabel(app.status)}</div>
                   {option?.label ? (
                     <div className="text-xs text-slate-500">Option: {option.label}</div>
                   ) : null}

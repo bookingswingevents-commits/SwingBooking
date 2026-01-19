@@ -14,6 +14,67 @@ export function fmtDateFR(input?: string | Date | null): string {
   }
 }
 
+function parseDateInput(input?: string | Date | null) {
+  if (!input) return null;
+  if (input instanceof Date) return Number.isNaN(input.getTime()) ? null : input;
+  const trimmed = String(input).trim();
+  if (!trimmed) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (match) {
+    const [, y, m, d] = match;
+    const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatDateParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).formatToParts(date);
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '';
+  const year = parts.find((part) => part.type === 'year')?.value ?? '';
+  const dayLabel = day === '1' ? '1er' : day;
+  return { dayLabel, month, year };
+}
+
+export function formatDateFR(input?: string | Date | null): string {
+  const date = parseDateInput(input);
+  if (!date) return '—';
+  const { dayLabel, month, year } = formatDateParts(date);
+  return `${dayLabel} ${month} ${year}`;
+}
+
+export function formatRangeFR(start?: string | Date | null, end?: string | Date | null): string {
+  const startDate = parseDateInput(start);
+  const endDate = parseDateInput(end);
+  if (!startDate && !endDate) return '—';
+  if (startDate && !endDate) return formatDateFR(startDate);
+  if (!startDate && endDate) return formatDateFR(endDate);
+
+  const startParts = formatDateParts(startDate as Date);
+  const endParts = formatDateParts(endDate as Date);
+  const sameYear = startParts.year === endParts.year;
+  const sameMonth = startParts.month === endParts.month && sameYear;
+
+  if (sameMonth) {
+    if (startParts.dayLabel === endParts.dayLabel) {
+      return formatDateFR(startDate as Date);
+    }
+    return `${startParts.dayLabel} → ${endParts.dayLabel} ${endParts.month} ${endParts.year}`;
+  }
+
+  if (sameYear) {
+    return `${startParts.dayLabel} ${startParts.month} → ${endParts.dayLabel} ${endParts.month} ${endParts.year}`;
+  }
+
+  return `${startParts.dayLabel} ${startParts.month} ${startParts.year} → ${endParts.dayLabel} ${endParts.month} ${endParts.year}`;
+}
+
 /**
  * Mapping FR “pro & sexy” pour tous les statuts connus de l’app :
  * - booking_requests.status

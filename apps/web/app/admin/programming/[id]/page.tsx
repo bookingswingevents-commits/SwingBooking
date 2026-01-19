@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
-import { PROGRAM_STATUS } from '@/lib/programming/types';
+import { getProgrammingStatusLabel } from '@/lib/programming/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -67,7 +67,7 @@ export default async function AdminProgrammingDetailPage({
 
       <section className="rounded-xl border p-4 space-y-2">
         <div className="text-sm font-medium">Statut</div>
-        <div className="text-sm text-slate-600">{(program.status ?? PROGRAM_STATUS.DRAFT).toUpperCase()}</div>
+        <div className="text-sm text-slate-600">{getProgrammingStatusLabel(program.status)}</div>
       </section>
 
       <section className="rounded-xl border p-4 space-y-2">

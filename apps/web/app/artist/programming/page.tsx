@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { fetchPublishedPrograms } from '@/lib/programming/queries';
 import { PROGRAM_STATUS } from '@/lib/programming/types';
+import { getProgrammingStatusLabel } from '@/lib/programming/status';
 import ItemRow from '@/components/programming/ItemRow';
 
 export const dynamic = 'force-dynamic';
@@ -78,7 +79,7 @@ export default async function ArtistProgrammingPage() {
               <ItemRow
                 title={program.title ?? 'Programmation'}
                 subtitle={labelProgramType(program.program_type)}
-                status={program.status ?? PROGRAM_STATUS.PUBLISHED}
+                status={getProgrammingStatusLabel(program.status ?? PROGRAM_STATUS.PUBLISHED)}
               />
             </Link>
           ))}

@@ -39,7 +39,7 @@ export default async function AdminProgrammingBookingPage({ params }: PageProps)
     return (
       <div className="space-y-3">
         <h1 className="text-2xl font-bold">Feuille de route</h1>
-        <p className="text-slate-500">Booking introuvable.</p>
+        <p className="text-slate-500">Confirmation introuvable.</p>
         <Link href="/admin/programming" className="text-sm underline text-[var(--brand)]">
           ← Retour
         </Link>

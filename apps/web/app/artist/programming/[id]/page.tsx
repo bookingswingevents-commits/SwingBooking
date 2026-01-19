@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { fetchProgram, fetchProgramItems } from '@/lib/programming/queries';
 import { ITEM_STATUS, PROGRAM_STATUS } from '@/lib/programming/types';
+import { getApplicationStatusLabel, getSlotStatusLabel } from '@/lib/programming/status';
 import ItemRow from '@/components/programming/ItemRow';
 
 export const dynamic = 'force-dynamic';
@@ -75,7 +76,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
     .eq('program_id', programId)
     .maybeSingle();
   if (!item || item.status !== ITEM_STATUS.OPEN) {
-    redirect(`/artist/programming/${programId}?error=Item%20non%20disponible`);
+    redirect(`/artist/programming/${programId}?error=Cr%C3%A9neau%20non%20disponible`);
   }
 
   const { data: existingBooking } = await supabase
@@ -84,7 +85,7 @@ async function applyToItem(programId: string, itemId: string, formData: FormData
     .eq('item_id', itemId)
     .maybeSingle();
   if (existingBooking) {
-    redirect(`/artist/programming/${programId}?error=Item%20deja%20reserve`);
+    redirect(`/artist/programming/${programId}?error=Cr%C3%A9neau%20d%C3%A9j%C3%A0%20r%C3%A9serv%C3%A9`);
   }
 
   const { error } = await supabase
@@ -165,7 +166,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
           ← Retour
         </Link>
         <h1 className="text-2xl font-bold">{displayTitle}</h1>
-        <p className="text-sm text-slate-600">Items disponibles</p>
+        <p className="text-sm text-slate-600">Créneaux disponibles</p>
       </header>
 
       {sp.error ? (
@@ -194,19 +195,24 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
               !application &&
               !booking;
             const onApply = applyToItem.bind(null, program.id, item.id);
+            const statusLabel = booking
+              ? getSlotStatusLabel('CONFIRMED')
+              : application
+                ? getApplicationStatusLabel(application.status)
+                : getSlotStatusLabel(item.status);
             return (
               <div key={item.id} className="space-y-3">
                 <ItemRow
                   title={`${item.start_date} → ${item.end_date}`}
                   subtitle={item.item_type === 'WEEK' ? 'Semaine' : 'Date'}
-                  status={booking?.status === 'CONFIRMED' ? 'CONFIRME' : application?.status ?? item.status}
+                  status={statusLabel}
                 />
                 {booking ? (
-                  <div className="px-4 pb-4 text-sm text-emerald-700">Booking confirme.</div>
+                  <div className="px-4 pb-4 text-sm text-emerald-700">Artiste confirmé.</div>
                 ) : null}
                 {application ? (
                   <div className="px-4 pb-4 text-sm text-slate-600">
-                    Candidature: {application.status}
+                    Candidature : {getApplicationStatusLabel(application.status)}
                   </div>
                 ) : null}
                 {canApply ? (
@@ -222,7 +228,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
                           className="border rounded-lg px-3 py-2 w-full"
                           required
                         >
-                          <option value="">Selectionner une option</option>
+                          <option value="">Sélectionner une option</option>
                           {feeOptions.map((opt, idx) => (
                             <option key={`${opt.label}-${idx}`} value={JSON.stringify(opt)}>
                               {opt.label}
