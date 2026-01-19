@@ -3,6 +3,11 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { formatRangeFR } from '@/lib/date';
 import { fetchCompleteProgramsForArtist, fetchOpenProgramsForArtist } from '@/lib/programming/queries';
+import {
+  getProgrammingStatusLabel,
+  getProgrammingStatusTone,
+  normalizeProgrammingStatus,
+} from '@/lib/programming/status';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,8 +96,10 @@ export default async function ArtistProgrammingPage() {
                 program.open_count === 1
                   ? '1 créneau disponible'
                   : `${program.open_count} créneaux disponibles`;
-              const statusLabel = getProgrammingStatusLabel(program.status ?? 'ACTIVE');
-              const statusTone = getProgrammingStatusTone(program.status ?? 'ACTIVE');
+              const normalized = normalizeProgrammingStatus(program.status);
+              const status = normalized ?? 'ACTIVE';
+              const statusLabel = getProgrammingStatusLabel(status);
+              const statusTone = getProgrammingStatusTone(status);
               return (
                 <div key={program.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="space-y-1">
