@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createSupabaseServerClient, getAdminAuth } from '@/lib/supabaseServer';
 import { getProgrammingStatusLabel } from '@/lib/programming/status';
+import StatusToggle from './status-toggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,7 @@ export default async function AdminProgrammingDetailPage({
       <section className="rounded-xl border p-4 space-y-2">
         <div className="text-sm font-medium">Statut</div>
         <div className="text-sm text-slate-600">{getProgrammingStatusLabel(program.status)}</div>
+        <StatusToggle programId={program.id} status={program.status} />
       </section>
 
       <section className="rounded-xl border p-4 space-y-2">

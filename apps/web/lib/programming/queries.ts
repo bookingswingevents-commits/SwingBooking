@@ -91,6 +91,9 @@ export async function fetchCompleteProgramsForArtist(
     if (!program?.id) return;
     if (openProgramIds.includes(program.id)) return;
 
+    const normalizedStatus = program.status ? normalizeProgrammingStatus(program.status) : 'ACTIVE';
+    if (program.status && normalizedStatus !== 'ACTIVE') return;
+
     const clientName = Array.isArray(program.clients)
       ? program.clients[0]?.name
       : (program.clients as any)?.name;

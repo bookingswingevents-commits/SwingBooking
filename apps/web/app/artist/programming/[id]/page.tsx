@@ -142,6 +142,7 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
   }
 
   const items = await fetchProgramItems(supabase, id);
+  const openItems = items.filter((item) => item.status === ITEM_STATUS.OPEN);
 
   const { data: applications } = await supabase
     .from('programming_applications')
@@ -182,13 +183,13 @@ export default async function ArtistProgrammingItemsPage({ params, searchParams 
         </div>
       ) : null}
 
-      {items.length === 0 ? (
+      {openItems.length === 0 ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-700 text-sm">
-          Aucun item pour le moment.
+          Aucun créneau disponible pour le moment.
         </div>
       ) : (
         <div className="rounded-xl border divide-y">
-          {items.map((item) => {
+          {openItems.map((item) => {
             const application = appMap.get(item.id);
             const booking = bookingMap.get(item.id);
             const canApply =

@@ -3,8 +3,6 @@ import { redirect } from 'next/navigation';
 import { createSupabaseServerClient } from '@/lib/supabaseServer';
 import { formatRangeFR } from '@/lib/date';
 import { fetchCompleteProgramsForArtist, fetchOpenProgramsForArtist } from '@/lib/programming/queries';
-import { getProgrammingStatusLabel, getProgrammingStatusTone } from '@/lib/programming/status';
-import StatusBadge from '@/components/programming/StatusBadge';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,42 +114,13 @@ export default async function ArtistProgrammingPage() {
             })}
           </div>
         )}
-        {availablePrograms.length === 0 ? (
-          <div className="text-xs text-slate-500">
-            Résumé : {totalPrograms} programmation{totalPrograms > 1 ? 's' : ''} trouvée
-            {totalPrograms > 1 ? 's' : ''}, {totalOpenSlots} créneau{totalOpenSlots > 1 ? 'x' : ''} à pourvoir.
-          </div>
-        ) : null}
       </section>
 
-      {completePrograms.length > 0 ? (
-        <section className="space-y-3">
-          <div>
-            <h2 className="text-sm font-semibold">Complètes</h2>
-            <p className="text-xs text-slate-500">Ces programmations sont déjà pourvues.</p>
-          </div>
-          <div className="rounded-xl border divide-y">
-            {completePrograms.map((program) => {
-              const periodLabel = formatRangeFR(program.start_date, program.end_date);
-              const statusLabel = getProgrammingStatusLabel(program.status ?? 'ENDED');
-              const statusTone = getProgrammingStatusTone(program.status ?? 'ENDED');
-              return (
-                <div key={program.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
-                  <div className="space-y-1">
-                    <div className="font-semibold">{program.title ?? 'Programmation'}</div>
-                    <div className="text-sm text-slate-600">
-                      {program.client_name ?? 'Client'} • {labelProgramType(program.program_type)}
-                    </div>
-                    <div className="text-xs text-slate-500">{periodLabel}</div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <StatusBadge label={statusLabel} tone={statusTone} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+      {availablePrograms.length === 0 ? (
+        <div className="text-xs text-slate-500">
+          Résumé : {totalPrograms} programmation{totalPrograms > 1 ? 's' : ''} publiée
+          {totalPrograms > 1 ? 's' : ''}, {totalOpenSlots} créneau{totalOpenSlots > 1 ? 'x' : ''} à pourvoir.
+        </div>
       ) : null}
     </div>
   );
